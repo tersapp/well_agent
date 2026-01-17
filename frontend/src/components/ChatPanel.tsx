@@ -1,0 +1,175 @@
+import React from 'react';
+import { RobotOutlined, CheckCircleOutlined, LoadingOutlined } from '@ant-design/icons';
+
+interface Message {
+    id: string;
+    agent: string;
+    content: string;
+    confidence: number;
+    timestamp: Date;
+    isFinal?: boolean;
+}
+
+interface ChatPanelProps {
+    messages: Message[];
+    isAnalyzing: boolean;
+    canAnalyze: boolean;
+    onStartAnalysis: () => void;
+}
+
+const agentColors: Record<string, string> = {
+    LithologyExpert: '#f59e0b',
+    ElectricalExpert: '#3b82f6',
+    Arbitrator: '#c084fc',
+    System: '#22c55e',
+};
+
+const agentNames: Record<string, string> = {
+    LithologyExpert: '岩性专家',
+    ElectricalExpert: '电性专家',
+    Arbitrator: '仲裁者',
+    System: '系统',
+};
+
+const ChatPanel: React.FC<ChatPanelProps> = ({
+    messages,
+    isAnalyzing,
+    canAnalyze,
+    onStartAnalysis
+}) => {
+    const roundCount = messages.filter(m => m.agent === 'Arbitrator').length || 0;
+
+    return (
+        <div style={{
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            background: 'var(--bg-secondary)'
+        }}>
+            {/* Header */}
+            <div style={{
+                padding: 'var(--spacing-md) var(--spacing-lg)',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--spacing-sm)'
+            }}>
+                <RobotOutlined style={{ color: 'var(--accent-primary)' }} />
+                <span style={{ fontWeight: 600 }}>智能体协作讨论</span>
+                <span style={{
+                    marginLeft: 'auto',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-muted)'
+                }}>
+                    第 {roundCount + 1} 轮
+                </span>
+            </div>
+
+            {/* Messages */}
+            <div className="chat-container" style={{ flex: 1 }}>
+                {messages.length === 0 ? (
+                    <div style={{
+                        textAlign: 'center',
+                        padding: 'var(--spacing-xl)',
+                        color: 'var(--text-muted)'
+                    }}>
+                        <RobotOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }} />
+                        <div>等待开始分析...</div>
+                        <div style={{ fontSize: '0.85rem', marginTop: 8 }}>
+                            加载数据后点击下方按钮开始
+                        </div>
+                    </div>
+                ) : (
+                    messages.map((msg) => (
+                        <div
+                            key={msg.id}
+                            className={`chat-message ${msg.isFinal ? '' : 'agent'} animate-fade-in`}
+                            style={{
+                                borderLeftColor: msg.isFinal ? 'var(--success)' : agentColors[msg.agent],
+                                background: msg.isFinal ? 'rgba(34, 197, 94, 0.1)' : undefined,
+                            }}
+                        >
+                            <div
+                                className="chat-avatar"
+                                style={{
+                                    background: agentColors[msg.agent] || 'var(--accent-gradient)',
+                                }}
+                            >
+                                {msg.agent[0]}
+                            </div>
+                            <div className="chat-content">
+                                <div className="chat-header">
+                                    <span className="chat-name">{agentNames[msg.agent] || msg.agent}</span>
+                                    {msg.isFinal && (
+                                        <CheckCircleOutlined style={{ color: 'var(--success)' }} />
+                                    )}
+                                    <span className="chat-time">
+                                        {msg.timestamp.toLocaleTimeString('zh-CN', {
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                        })}
+                                    </span>
+                                </div>
+                                <div className="chat-text">{msg.content}</div>
+                                {msg.agent !== 'System' && (
+                                    <div style={{
+                                        marginTop: 8,
+                                        fontSize: '0.75rem',
+                                        color: 'var(--text-muted)'
+                                    }}>
+                                        置信度:
+                                        <span style={{
+                                            color: msg.confidence > 0.8 ? 'var(--success)' :
+                                                msg.confidence > 0.6 ? 'var(--warning)' : 'var(--error)',
+                                            marginLeft: 4,
+                                            fontWeight: 600
+                                        }}>
+                                            {(msg.confidence * 100).toFixed(0)}%
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
+
+                {isAnalyzing && (
+                    <div className="chat-message agent animate-fade-in" style={{ borderLeftColor: 'var(--accent-primary)' }}>
+                        <div className="chat-avatar" style={{ background: 'var(--accent-gradient)' }}>
+                            <LoadingOutlined spin />
+                        </div>
+                        <div className="chat-content">
+                            <div className="chat-text" style={{ color: 'var(--accent-primary)' }}>
+                                智能体分析中...
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+                padding: 'var(--spacing-md)',
+                borderTop: '1px solid var(--border-color)'
+            }}>
+                <button
+                    className="btn btn-primary"
+                    style={{ width: '100%' }}
+                    onClick={onStartAnalysis}
+                    disabled={!canAnalyze}
+                >
+                    {isAnalyzing ? (
+                        <>
+                            <LoadingOutlined spin />
+                            分析中...
+                        </>
+                    ) : (
+                        '开始新一轮分析'
+                    )}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+export default ChatPanel;
