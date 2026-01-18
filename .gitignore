@@ -1,3 +1,64 @@
+# ==========================================
+# STRICT SECURITY & PRIVACY RULES
+# ==========================================
+
+# 1. API Keys, Secrets & Env Variables
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.cert
+*.pfx
+*.p12
+*.jks
+secrets.json
+secrets.yaml
+config_local.py
+passwd
+ssh_keys/
+
+# 2. Well Data & Geophysical Formats (High Sensitivity)
+# Well Logs
+*.las
+*.dlis
+*.lis
+*.asc
+*.sp
+# Seismic Data
+*.sgy
+*.segy
+*.seg
+# Maps & Grids
+*.zmap
+*.grd
+*.grid
+*.cps
+# Projects
+*.pet
+*.pds
+
+# 3. Data Tables & Spreadsheets (Often contain interpreted data)
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.tsv
+# Exception for config/mapping files if strictly necessary (add specific exceptions below)
+
+# 4. Databases & Session Files
+*.db
+*.sqlite
+*.sqlite3
+*.mdb
+*.accdb
+session_*.json
+workspace.json
+
+# ==========================================
+# STANDARD LANGUAGE & FRAMEWORK RULES
+# ==========================================
+
 # Python
 __pycache__/
 *.py[cod]
@@ -19,6 +80,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Virtual Environment
 venv/
@@ -26,63 +88,61 @@ ENV/
 env/
 .venv/
 
-# IDE
+# Node.js / Frontend
+frontend/node_modules/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/dist/
+frontend/.vite/
+frontend/out/
+frontend/.next/
+frontend/.nuxt/
+frontend/.cache/
+
+# IDE & Editors
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
-
-# Environment Variables
-.env
-.env.local
-.env.*.local
-
-# Logs
-*.log
-logs/
-
-# Test Data (optional - uncomment if you want to exclude)
-# test_data/
-
-# Session Files
-session_*.json
-
-# Node.js
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Electron
-frontend/out/
+*.sublime-*
 
 # OS Files
 .DS_Store
 Thumbs.db
 Desktop.ini
+$RECYCLE.BIN/
 
-# Temporary Files
-*.tmp
-*.temp
+# Logs & Temp
+*.log
+*.log.*
+logs/
 temp/
 tmp/
+*.tmp
+*.temp
+*.bak
 
-# Coverage Reports
-coverage/
-.coverage
-htmlcov/
+# Archives
+*.zip
+*.tar
+*.gz
+*.rar
+*.7z
 
-# Jupyter Notebooks (if any)
-.ipynb_checkpoints/
+# ==========================================
+# EXCEPTIONS (Allow specific safe files)
+# ==========================================
 
-# pytest
-.pytest_cache/
+# Allow test data samples (ensure these contain NO real sensitive info)
+!test_data/sample.las
+!test_data/sample.csv
 
-# mypy
-.mypy_cache/
+# Allow necessary documentation
+!docs/*.pdf
 
-# Plan and Brain artifacts (optional - keep if you want to share)
-# .gemini/
+# Allow package manager locks
+!package-lock.json
+!yarn.lock
