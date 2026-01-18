@@ -1,0 +1,26 @@
+# 项目背景信息
+# 每次分析时注入所有智能体的上下文
+
+project:
+  name: "示例油田区块"
+  basin: "渤海湾盆地"
+  formation: "东营组"
+
+geology:
+  target_lithology: "细砂岩/粉砂岩互层"
+  depositional_environment: "湖相三角洲前缘"
+  expected_porosity_range: "12-18%"
+  expected_permeability_range: "5-50 mD"
+  reservoir_heterogeneity: "中等-较强"
+
+fluids:
+  oil_type: "中质原油"
+  oil_density_gcc: 0.85
+  formation_water_resistivity_ohmm: 0.08
+  gas_oil_ratio_m3m3: 50
+  formation_temperature_celsius: 85
+
+interpretation_notes:
+  - "目标层段可能存在低阻油层"
+  - "储层非均质性较强，需关注夹层分布"
+  - "部分层段存在钙质胶结"

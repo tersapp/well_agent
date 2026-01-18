@@ -205,11 +205,12 @@ const TrackColumn: React.FC<TrackColumnProps> = ({
         <div
             style={{
                 width, minWidth: width, height: '100%',
-                display: 'flex', flexDirection: 'column',
                 display: config ? 'flex' : 'none',
+                flexDirection: 'column',
                 borderRight: '1px solid #3f3f46',
             }}
             onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, name); }}
+
             draggable={true}
             onDragStart={(e) => onDragStart?.(e, name)}
             onDragOver={(e) => { e.preventDefault(); onDragOver?.(e); }}

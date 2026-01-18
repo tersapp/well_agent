@@ -1,0 +1,21 @@
+# GR 门槛值参考表
+# 不同区块可根据实际情况调整
+
+default:
+  pure_sand_max: 45
+  sand_max: 60
+  shaly_sand_max: 80
+  sandy_shale_max: 100
+
+# 区块特定门槛值示例
+bohai_bay:
+  pure_sand_max: 50
+  sand_max: 65
+  shaly_sand_max: 85
+  sandy_shale_max: 105
+
+ordos:
+  pure_sand_max: 40
+  sand_max: 55
+  shaly_sand_max: 75
+  sandy_shale_max: 95

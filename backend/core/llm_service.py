@@ -1,13 +1,16 @@
 import os
 import time
 import logging
+from pathlib import Path
 from typing import List, Dict, Optional, Any, Callable, Union
 from functools import wraps
-from zhipuai import ZhipuAI
+from openai import OpenAI
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from project root
+project_root = Path(__file__).resolve().parent.parent.parent
+env_path = project_root / ".env"
+load_dotenv(dotenv_path=env_path)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -40,23 +43,29 @@ def retry_on_failure(max_retries=3, delay=1, backoff=2):
 
 class LLMService:
     """
-    Wrapper for Zhipu AI GLM-4.7 (glm-4-plus) service.
-    Provides methods for chat completion and streaming.
+    Wrapper for OpenCode.ai Zen API (Z.AI GLM-4.7 model).
+    Uses OpenAI-compatible API format.
     """
     
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("ZHIPU_API_KEY")
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+        self.api_key = api_key or os.getenv("OPENCODE_API_KEY") or os.getenv("ZHIPU_API_KEY")
+        self.base_url = base_url or os.getenv("OPENCODE_BASE_URL", "https://api.z.ai/api/coding/paas/v4")
+        
         if not self.api_key:
-            logger.warning("ZHIPU_API_KEY not found in environment variables. LLM calls will fail.")
+            logger.warning("API Key not found in environment variables. LLM calls will fail.")
             self.client = None
         else:
             try:
-                self.client = ZhipuAI(api_key=self.api_key)
+                self.client = OpenAI(
+                    api_key=self.api_key,
+                    base_url=self.base_url
+                )
+                logger.info(f"LLMService initialized with base_url: {self.base_url}")
             except Exception as e:
-                logger.error(f"Failed to initialize ZhipuAI client: {e}")
+                logger.error(f"Failed to initialize OpenAI client: {e}")
                 self.client = None
                 
-        self.model = "glm-4-plus"
+        self.model = os.getenv("LLM_MODEL", "glm-4-plus")
         self.max_tokens = 4096
         self.temperature = 0.7
         self.top_p = 0.9
@@ -92,13 +101,20 @@ class LLMService:
                 stream=False
             )
             
+            # Extract usage info if available, otherwise use defaults
+            usage_info = {}
+            if hasattr(response, 'usage') and response.usage:
+                usage_info = {
+                    "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0) or 0,
+                    "completion_tokens": getattr(response.usage, 'completion_tokens', 0) or 0,
+                    "total_tokens": getattr(response.usage, 'total_tokens', 0) or 0
+                }
+            else:
+                usage_info = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            
             return {
                 "content": response.choices[0].message.content,
-                "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
-                },
+                "usage": usage_info,
                 "success": True
             }
         except Exception as e:

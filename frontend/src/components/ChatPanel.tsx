@@ -14,12 +14,17 @@ interface ChatPanelProps {
     messages: Message[];
     isAnalyzing: boolean;
     canAnalyze: boolean;
+    progressStatus?: string; // e.g., "第1轮，岩性专家正在分析..."
     onStartAnalysis: () => void;
 }
 
 const agentColors: Record<string, string> = {
     LithologyExpert: '#f59e0b',
     ElectricalExpert: '#3b82f6',
+    ReservoirPropertyExpert: '#10b981', // Emerald
+    SaturationExpert: '#f43f5e', // Rose
+    MudLoggingExpert: '#eab308', // Yellow
+    MineralogyExpert: '#8b5cf6', // Violet
     Arbitrator: '#c084fc',
     System: '#22c55e',
 };
@@ -27,6 +32,10 @@ const agentColors: Record<string, string> = {
 const agentNames: Record<string, string> = {
     LithologyExpert: '岩性专家',
     ElectricalExpert: '电性专家',
+    ReservoirPropertyExpert: '物性专家',
+    SaturationExpert: '饱和度专家',
+    MudLoggingExpert: '气测专家',
+    MineralogyExpert: '矿物专家',
     Arbitrator: '仲裁者',
     System: '系统',
 };
@@ -35,6 +44,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     messages,
     isAnalyzing,
     canAnalyze,
+    progressStatus,
     onStartAnalysis
 }) => {
     const roundCount = messages.filter(m => m.agent === 'Arbitrator').length || 0;
@@ -152,6 +162,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 padding: 'var(--spacing-md)',
                 borderTop: '1px solid var(--border-color)'
             }}>
+                {/* Progress Status Display */}
+                {progressStatus && (
+                    <div style={{
+                        marginBottom: 'var(--spacing-sm)',
+                        padding: '8px 12px',
+                        background: 'rgba(139, 92, 246, 0.1)',
+                        borderRadius: 6,
+                        fontSize: '0.85rem',
+                        color: 'var(--accent-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8
+                    }}>
+                        <LoadingOutlined spin style={{ fontSize: 14 }} />
+                        <span>{progressStatus}</span>
+                    </div>
+                )}
                 <button
                     className="btn btn-primary"
                     style={{ width: '100%' }}

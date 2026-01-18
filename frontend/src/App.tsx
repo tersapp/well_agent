@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import CurvePanel from './components/CurvePanel';
 import ChatPanel from './components/ChatPanel';
+import HistoryPage from './components/HistoryPage';
 import AnalysisConfigModal, { AnalysisConfig } from './components/AnalysisConfigModal';
+import CurveMappingModal from './components/CurveMappingModal';
 import api from './api/client';
 
 interface LogData {
@@ -26,14 +28,22 @@ interface Message {
 }
 
 const App: React.FC = () => {
-    const [activeView, setActiveView] = useState<'analysis' | 'report'>('analysis');
+    const [activeView, setActiveView] = useState<'analysis' | 'report' | 'history'>('analysis');
     const [logData, setLogData] = useState<LogData | null>(null);
     const [sessionId, setSessionId] = useState<string>('');
     const [isLoading, setIsLoading] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [progressStatus, setProgressStatus] = useState<string>('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // Curve mapping state
+    const [showMappingModal, setShowMappingModal] = useState(false);
+    const [curveMapping, setCurveMapping] = useState<any>(null);
+    const [standardTypes, setStandardTypes] = useState<Record<string, any>>({});
+    const [llmSuggestions, setLlmSuggestions] = useState<Record<string, string | null>>({});
+    const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
     const handleLoadFile = async (file: File) => {
         setIsLoading(true);
@@ -65,6 +75,37 @@ const App: React.FC = () => {
                         timestamp: new Date(),
                     }]);
                 }
+
+                // Check curve mapping
+                const mapping = result.curve_mapping;
+                if (mapping && mapping.unmatched && mapping.unmatched.length > 0) {
+                    setCurveMapping(mapping);
+
+                    // Load standard types
+                    try {
+                        const typesResult = await api.getCurveStandardTypes();
+                        if (typesResult.success) {
+                            setStandardTypes(typesResult.standard_types);
+                        }
+                    } catch (e) {
+                        console.error('Failed to load standard types:', e);
+                    }
+
+                    // Get LLM suggestions
+                    setIsLoadingSuggestions(true);
+                    setShowMappingModal(true);
+
+                    try {
+                        const suggestResult = await api.suggestCurveMapping(result.session_id);
+                        if (suggestResult.success) {
+                            setLlmSuggestions(suggestResult.suggestions);
+                        }
+                    } catch (e) {
+                        console.error('Failed to get LLM suggestions:', e);
+                    } finally {
+                        setIsLoadingSuggestions(false);
+                    }
+                }
             }
         } catch (error: any) {
             console.error('Failed to load file:', error);
@@ -82,13 +123,42 @@ const App: React.FC = () => {
 
     const handleRestoreSession = (data: LogData) => {
         setLogData(data);
-        // Optionally generate a new session ID or keep old?
-        // For simplicity, we assume analysis starts fresh or backend session is lost unless persisted.
-        // We'll just notify user.
+        // Generate a session ID from the well name for restored sessions
+        const generatedSessionId = `restored_${data.metadata.well.name || 'unknown'}_${Date.now()}`;
+        setSessionId(generatedSessionId);
+
         setMessages(prev => [...prev, {
             id: Date.now().toString(),
             agent: 'System',
-            content: `会话已从文件恢复: ${data.metadata.well.name}`,
+            content: `会话已从文件恢复: ${data.metadata.well.name}\n注意: 需要重新上传 LAS 文件以启用 AI 分析`,
+            confidence: 1.0,
+            timestamp: new Date(),
+        }]);
+    };
+
+    const handleMappingConfirm = async (mappings: Record<string, string>, shouldSave: boolean) => {
+        if (shouldSave) {
+            try {
+                const result = await api.saveCurveMapping(mappings);
+                if (result.success) {
+                    setMessages(prev => [...prev, {
+                        id: Date.now().toString(),
+                        agent: 'System',
+                        content: `已保存 ${result.saved.length} 条曲线映射，下次将自动识别。`,
+                        confidence: 1.0,
+                        timestamp: new Date(),
+                    }]);
+                }
+            } catch (error) {
+                console.error('Failed to save mappings:', error);
+            }
+        }
+
+        setShowMappingModal(false);
+        setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            agent: 'System',
+            content: `曲线映射已应用，可以开始分析。`,
             confidence: 1.0,
             timestamp: new Date(),
         }]);
@@ -103,6 +173,7 @@ const App: React.FC = () => {
         if (!logData) return;
 
         setIsAnalyzing(true);
+        setProgressStatus('正在启动智能体系统...');
 
         setMessages(prev => [...prev, {
             id: Date.now().toString(),
@@ -112,39 +183,76 @@ const App: React.FC = () => {
             timestamp: new Date(),
         }]);
 
-        try {
-            const result = await api.runAnalysis(
-                config.startDepth,
-                config.endDepth,
-                config.focusNote,
-                sessionId
-            );
+        // Use streaming analysis
+        console.log('Starting streaming analysis with sessionId:', sessionId);
 
-            if (result.success && result.messages.length > 0) {
-                for (const msg of result.messages) {
-                    await new Promise(resolve => setTimeout(resolve, 800));
+        const agentNames: Record<string, string> = {
+            LithologyExpert: '岩性专家',
+            ElectricalExpert: '电性专家',
+            ReservoirPropertyExpert: '物性专家',
+            SaturationExpert: '饱和度专家',
+            MudLoggingExpert: '气测专家',
+            MineralogyExpert: '矿物专家',
+            Arbitrator: '仲裁者',
+        };
+
+        api.createStreamingAnalysis(
+            config.startDepth,
+            config.endDepth,
+            config.focusNote,
+            sessionId,
+            // onMessage callback - called for each SSE event
+            (data) => {
+                if (data.type === 'agent_message') {
+                    const displayName = agentNames[data.agent || ''] || data.agent;
+                    setProgressStatus(`${displayName}正在分析...`);
+
                     setMessages(prev => [...prev, {
                         id: Date.now().toString(),
-                        agent: msg.agent,
-                        content: msg.content,
-                        confidence: msg.confidence,
+                        agent: data.agent || 'Unknown',
+                        content: data.content || '',
+                        confidence: data.confidence || 0,
                         timestamp: new Date(),
-                        isFinal: msg.is_final,
+                        isFinal: data.is_final,
+                    }]);
+
+                    // Brief completion status
+                    setTimeout(() => {
+                        setProgressStatus(`${displayName}分析完成`);
+                    }, 100);
+                } else if (data.type === 'final_decision') {
+                    console.log('Final decision received:', data);
+                } else if (data.type === 'error') {
+                    console.error('Stream error:', data.message);
+                    setMessages(prev => [...prev, {
+                        id: Date.now().toString(),
+                        agent: 'System',
+                        content: `流式分析错误: ${data.message}`,
+                        confidence: 0,
+                        timestamp: new Date(),
                     }]);
                 }
+            },
+            // onError callback
+            (error) => {
+                console.error('Streaming analysis failed:', error);
+                setMessages(prev => [...prev, {
+                    id: Date.now().toString(),
+                    agent: 'System',
+                    content: `分析失败: ${error instanceof Error ? error.message : '请检查后端服务'}`,
+                    confidence: 0,
+                    timestamp: new Date(),
+                }]);
+                setIsAnalyzing(false);
+                setProgressStatus('');
+            },
+            // onComplete callback
+            () => {
+                console.log('Streaming analysis completed');
+                setIsAnalyzing(false);
+                setProgressStatus('');
             }
-        } catch (error: any) {
-            console.error('Analysis failed:', error);
-            setMessages(prev => [...prev, {
-                id: Date.now().toString(),
-                agent: 'System',
-                content: `分析失败: ${error.message || '请检查后端服务'}`,
-                confidence: 0,
-                timestamp: new Date(),
-            }]);
-        } finally {
-            setIsAnalyzing(false);
-        }
+        );
     };
 
     const depthRange = logData
@@ -155,43 +263,53 @@ const App: React.FC = () => {
         <div className="app-container">
             {/* Sidebar - Hidden in fullscreen */}
             {!isFullscreen && (
-                <Sidebar activeView={activeView} onViewChange={setActiveView} />
+                <Sidebar
+                    activeView={activeView}
+                    onViewChange={setActiveView}
+                    messages={messages}
+                    progressStatus={progressStatus}
+                />
             )}
 
             <main className="main-content" style={{ flex: 1 }}>
-                <div style={{ display: 'flex', flex: 1, overflow: 'hidden', height: '100%' }}>
-                    {/* Curve Panel - Constrained width */}
-                    <div style={{
-                        flex: 1,
-                        minWidth: 400,
-                        maxWidth: isFullscreen ? '100%' : 'calc(100% - 420px)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        height: '100%',
-                        overflow: 'hidden',
-                    }}>
-                        <CurvePanel
-                            logData={logData}
-                            isLoading={isLoading}
-                            onLoadFile={handleLoadFile}
-                            onRestoreSession={handleRestoreSession}
-                            isFullscreen={isFullscreen}
-                            onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
-                        />
-                    </div>
-
-                    {/* Chat Panel - Hidden in fullscreen */}
-                    {!isFullscreen && (
-                        <div style={{ width: 420, borderLeft: '1px solid var(--border-color)' }}>
-                            <ChatPanel
-                                messages={messages}
-                                isAnalyzing={isAnalyzing}
-                                onStartAnalysis={handleRequestAnalysis}
-                                canAnalyze={!!logData && !isAnalyzing}
+                {activeView === 'history' ? (
+                    <HistoryPage onNavigateBack={() => setActiveView('analysis')} />
+                ) : (
+                    <div style={{ display: 'flex', flex: 1, overflow: 'hidden', height: '100%' }}>
+                        {/* Curve Panel - Constrained width */}
+                        <div style={{
+                            flex: 1,
+                            minWidth: 400,
+                            maxWidth: isFullscreen ? '100%' : 'calc(100% - 420px)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            height: '100%',
+                            overflow: 'hidden',
+                        }}>
+                            <CurvePanel
+                                logData={logData}
+                                isLoading={isLoading}
+                                onLoadFile={handleLoadFile}
+                                onRestoreSession={handleRestoreSession}
+                                isFullscreen={isFullscreen}
+                                onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
                             />
                         </div>
-                    )}
-                </div>
+
+                        {/* Chat Panel - Hidden in fullscreen */}
+                        {!isFullscreen && (
+                            <div style={{ width: 420, borderLeft: '1px solid var(--border-color)' }}>
+                                <ChatPanel
+                                    messages={messages}
+                                    isAnalyzing={isAnalyzing}
+                                    progressStatus={progressStatus}
+                                    onStartAnalysis={handleRequestAnalysis}
+                                    canAnalyze={!!logData && !isAnalyzing}
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
             </main>
 
             <AnalysisConfigModal
@@ -199,6 +317,16 @@ const App: React.FC = () => {
                 onClose={() => setShowConfigModal(false)}
                 onConfirm={handleStartAnalysis}
                 depthRange={depthRange}
+            />
+
+            <CurveMappingModal
+                visible={showMappingModal}
+                onClose={() => setShowMappingModal(false)}
+                onConfirm={handleMappingConfirm}
+                curveMapping={curveMapping}
+                standardTypes={standardTypes}
+                llmSuggestions={llmSuggestions}
+                isLoadingSuggestions={isLoadingSuggestions}
             />
         </div>
     );

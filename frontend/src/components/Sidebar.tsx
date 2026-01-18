@@ -1,23 +1,53 @@
-import React from 'react';
 import {
     DatabaseOutlined,
     LineChartOutlined,
     FileTextOutlined,
     SettingOutlined,
-    RobotOutlined
+    RobotOutlined,
+    HistoryOutlined,
+    DownOutlined,
+    RightOutlined,
+    LoadingOutlined
 } from '@ant-design/icons';
+import { useState } from 'react';
 
 interface SidebarProps {
-    activeView: 'analysis' | 'report';
-    onViewChange: (view: 'analysis' | 'report') => void;
+    activeView: 'analysis' | 'report' | 'history';
+    onViewChange: (view: 'analysis' | 'report' | 'history') => void;
+    // New props for dynamic status
+    messages: any[]; // Using any[] for simplicity, but ideally should match Message interface
+    progressStatus: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, messages = [], progressStatus = '' }) => {
+    const [isAgentsExpanded, setIsAgentsExpanded] = useState(true);
+
+    // Config with internal keys for matching
     const agents = [
-        { name: '岩性专家', status: 'idle' as const, abbr: 'L' },
-        { name: '电性专家', status: 'idle' as const, abbr: 'E' },
-        { name: '仲裁者', status: 'success' as const, abbr: 'A' },
+        { key: 'LithologyExpert', name: '岩性专家', abbr: 'L' },
+        { key: 'ElectricalExpert', name: '电性专家', abbr: 'E' },
+        { key: 'ReservoirPropertyExpert', name: '物性专家', abbr: 'R' },
+        { key: 'SaturationExpert', name: '饱和度专家', abbr: 'S' },
+        { key: 'MudLoggingExpert', name: '气测专家', abbr: 'G' },
+        { key: 'MineralogyExpert', name: '矿物专家', abbr: 'M' },
+        { key: 'Arbitrator', name: '仲裁者', abbr: 'A' },
     ];
+
+    const getAgentStatus = (agent: typeof agents[0]) => {
+        // 1. Check if currently processing (Active)
+        // Check if progressStatus contains the name (e.g. "岩性专家正在分析...")
+        if (progressStatus && progressStatus.includes(agent.name)) {
+            return 'processing';
+        }
+
+        // 2. Check if has participated (Success)
+        const hasMessage = messages.some(m => m.agent === agent.key);
+        if (hasMessage) {
+            return 'success';
+        }
+
+        return 'idle';
+    };
 
     return (
         <div className="sidebar">
@@ -30,7 +60,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
             </div>
 
             {/* Navigation */}
-            <nav style={{ padding: 'var(--spacing-md)', flex: 1 }}>
+            <nav style={{ padding: 'var(--spacing-md)', flex: 1, overflow: 'auto' }}>
                 <div style={{ marginBottom: 'var(--spacing-lg)' }}>
                     <div className="card-title" style={{ marginBottom: 'var(--spacing-sm)' }}>
                         导航
@@ -47,6 +77,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
                         onClick={() => onViewChange('analysis')}
                     />
                     <NavItem
+                        icon={<HistoryOutlined />}
+                        label="历史记录"
+                        active={activeView === 'history'}
+                        onClick={() => onViewChange('history')}
+                    />
+                    <NavItem
                         icon={<FileTextOutlined />}
                         label="生成报告"
                         active={activeView === 'report'}
@@ -56,22 +92,54 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
 
                 {/* Agent Status */}
                 <div>
-                    <div className="card-title" style={{ marginBottom: 'var(--spacing-sm)' }}>
+                    <div
+                        className="card-title"
+                        style={{
+                            marginBottom: 'var(--spacing-sm)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            userSelect: 'none'
+                        }}
+                        onClick={() => setIsAgentsExpanded(!isAgentsExpanded)}
+                    >
                         <RobotOutlined style={{ marginRight: 6 }} />
-                        智能体状态
+                        <span style={{ flex: 1 }}>智能体状态</span>
+                        {isAgentsExpanded ? <DownOutlined style={{ fontSize: 10 }} /> : <RightOutlined style={{ fontSize: 10 }} />}
                     </div>
-                    {agents.map((agent) => (
-                        <div key={agent.name} className="agent-status" style={{ marginBottom: 8 }}>
-                            <div
-                                className="chat-avatar"
-                                style={{ width: 28, height: 28, fontSize: '0.7rem' }}
-                            >
-                                {agent.abbr}
-                            </div>
-                            <span style={{ flex: 1, fontSize: '0.85rem' }}>{agent.name}</span>
-                            <div className={`agent-status-dot ${agent.status}`} />
+
+                    {isAgentsExpanded && (
+                        <div className="animate-fade-in" style={{ paddingLeft: 4 }}>
+                            {agents.map((agent) => {
+                                const status = getAgentStatus(agent);
+                                return (
+                                    <div key={agent.key} className="agent-status" style={{ marginBottom: 8 }}>
+                                        <div
+                                            className="chat-avatar"
+                                            style={{
+                                                width: 28,
+                                                height: 28,
+                                                fontSize: '0.7rem',
+                                                // Grayscale if idle, Color if active/success
+                                                filter: status === 'idle' ? 'grayscale(100%) opacity(0.5)' : 'none',
+                                                transition: 'all 0.3s ease'
+                                            }}
+                                        >
+                                            {agent.abbr}
+                                        </div>
+                                        <span style={{ flex: 1, fontSize: '0.85rem', color: status === 'idle' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                            {agent.name}
+                                        </span>
+                                        {status === 'processing' ? (
+                                            <LoadingOutlined style={{ color: 'var(--accent-primary)' }} />
+                                        ) : (
+                                            <div className={`agent-status-dot ${status}`} />
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
-                    ))}
+                    )}
                 </div>
             </nav>
 

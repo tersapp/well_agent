@@ -1,0 +1,173 @@
+# Agent Registry Configuration
+# 新增智能体只需在此处添加配置项，无需修改代码
+
+agents:
+  - key: LithologyExpert
+    name: 岩性专家
+    abbr: L
+    color: "#f59e0b"
+    module: backend.agents.lithology_agent
+    class: LithologyAgent
+    skills:
+      - lithology-classification
+    capabilities:
+      - 岩性识别 (砂岩/泥岩/碳酸盐岩/火山岩)
+      - 泥质含量估算 (Vsh)
+      - 储层/非储层初步判断
+      - 岩性纯净度分析
+    keywords:
+      - lithology
+      - sand
+      - shale
+      - rock
+      - lime
+      - dolomite
+      - 岩性
+      - 砂岩
+      - 泥岩
+      - 灰岩
+      - 白云岩
+      - 纯净
+
+  - key: ElectricalExpert
+    name: 电性专家
+    abbr: E
+    color: "#3b82f6"
+    module: backend.agents.electrical_agent
+    class: ElectricalAgent
+    skills:
+      - fluid-identification
+    capabilities:
+      - 电阻率曲线分析 (RT, RXO)
+      - 流体性质定性判断 (油/水/干)
+      - 侵入特征识别
+    keywords:
+      - resistivity
+      - rt
+      - rxo
+      - conductivity
+      - electric
+      - 电阻率
+      - 电性
+      - 导电
+
+  - key: ReservoirPropertyExpert
+    name: 物性专家
+    abbr: R
+    color: "#10b981"
+    module: backend.agents.reservoir_agent
+    class: ReservoirPropertyAgent
+    skills:
+      - reservoir-evaluation
+      - low-permeability-reservoir
+    capabilities:
+      - 孔隙度计算 (有效/总)
+      - 渗透率估算
+      - 储层分类 (I/II/III类)
+      - 净厚度/有效厚度识别
+    keywords:
+      - porosity
+      - permeability
+      - 物性
+      - 孔隙度
+      - 渗透率
+      - 储层质量
+      - 有效厚度
+      - 净厚度
+
+  - key: SaturationExpert
+    name: 饱和度专家
+    abbr: S
+    color: "#f43f5e"
+    module: backend.agents.saturation_agent
+    class: SaturationAgent
+    skills:
+      - fluid-identification
+      - reservoir-evaluation
+    capabilities:
+      - 含水饱和度计算 (Sw)
+      - 含油饱和度计算 (So)
+      - Archie公式应用
+      - 可动油判断
+      - 油水界面识别
+    keywords:
+      - saturation
+      - sw
+      - so
+      - oil saturation
+      - water saturation
+      - movable
+      - pay
+      - 饱和度
+      - 含油
+      - 含水
+      - 可动
+      - 油水界面
+
+  - key: MudLoggingExpert
+    name: 气测专家
+    abbr: G
+    color: "#eab308"
+    module: backend.agents.mud_logging_agent
+    class: MudLoggingAgent
+    capabilities:
+      - 全烃分析 (Total Gas)
+      - 气体组分分析 (C1-C5)
+      - 钻时突变识别 (ROP)
+      - 油气显示评价
+      - 湿度比/干燥系数计算
+    keywords:
+      - gas
+      - methane
+      - drill
+      - rop
+      - c1
+      - c2
+      - tg
+      - 气测
+      - 录井
+      - 全烃
+      - 钻时
+      - 钻速
+      - 油气显示
+
+  - key: MineralogyExpert
+    name: 矿物专家
+    abbr: M
+    color: "#8b5cf6"
+    module: backend.agents.mineralogy_agent
+    class: MineralogyAgent
+    capabilities:
+      - 矿物组分分析 (Vol_Cal, Vol_Dol, Vol_Sand)
+      - 自然能谱分析 (U, K, Th)
+      - 粘土矿物类型判别
+      - 有机质识别
+      - 复杂岩性判断
+    keywords:
+      - mineral
+      - clay
+      - calcite
+      - quartz
+      - uranium
+      - potassium
+      - thorium
+      - matrix
+      - 矿物
+      - 粘土
+      - 能谱
+      - 方解石
+      - 石英
+      - 基质
+
+  - key: Arbitrator
+    name: 仲裁者
+    abbr: A
+    color: "#c084fc"
+    module: backend.agents.arbitrator_agent
+    class: ArbitratorAgent
+    capabilities:
+      - 综合分析与决策
+      - 智能体调度
+      - 结论整合
+    keywords: []
+    is_arbitrator: true

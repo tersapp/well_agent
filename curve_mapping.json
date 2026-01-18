@@ -1,0 +1,574 @@
+{
+  "version": "1.3",
+  "standard_types": {
+    "DEPTH": {
+      "description": "深度 (Depth) - 井眼测量的基准深度，通常为测量深度(MD)或垂直深度(TVD)。",
+      "unit": "m"
+    },
+    "GR": {
+      "description": "自然伽马 (Gamma Ray) - 测量岩石天然放射性，用于识别岩性（泥岩高伽马，砂岩低伽马）。",
+      "unit": "API"
+    },
+    "RHOB": {
+      "description": "岩石密度 (Bulk Density) - 测量地层体积密度，用于计算地层孔隙度。",
+      "unit": "g/cc"
+    },
+    "NPHI": {
+      "description": "中子孔隙度 (Neutron Porosity) - 测量地层含氢量，反映孔隙体积。与密度曲线结合可识别气层。",
+      "unit": "v/v"
+    },
+    "PE": {
+      "description": "光电吸收截面指数 (Photoelectric Factor) - 反映岩石骨架化学成分，用于精细识别岩性。",
+      "unit": "b/e"
+    },
+    "SP": {
+      "description": "自然电位 (Spontaneous Potential) - 井壁与地层的电位差，用于识别渗透层和估算泥质含量。",
+      "unit": "mV"
+    },
+    "CAL": {
+      "description": "井径 (Caliper) - 测量井眼直径，判断井壁是否坍塌或有泥饼形成，用于质控。",
+      "unit": "in"
+    },
+    "DT": {
+      "description": "纵波时差 (Compressional Slowness) - 纵波通过地层的时间，用于计算孔隙度和合成地震记录。",
+      "unit": "us/ft"
+    },
+    "DTS": {
+      "description": "横波时差 (Shear Slowness) - 横波通过地层的时间，用于岩石力学分析和流体识别。",
+      "unit": "us/ft"
+    },
+    "RES_DEEP": {
+      "description": "深电阻率 (Deep Resistivity) - 探测地层深部原状地层电阻率，判断是否含油气（油气高电阻，水低电阻）。",
+      "unit": "ohm.m"
+    },
+    "RES_MED": {
+      "description": "中电阻率 (Medium Resistivity) - 探测过渡带电阻率，辅助判断侵入情况。",
+      "unit": "ohm.m"
+    },
+    "RES_SHALLOW": {
+      "description": "浅电阻率 (Shallow Resistivity) - 探测井壁附近冲洗带电阻率。",
+      "unit": "ohm.m"
+    },
+    "RXO": {
+      "description": "冲洗带电阻率 (Flushed Zone Resistivity) - 紧邻井壁的电阻率，用于计算残余油饱和度。",
+      "unit": "ohm.m"
+    },
+    "SGR_U": {
+      "description": "铀 (Uranium) - 能谱伽马分量，常指示有机质或裂缝。",
+      "unit": "ppm"
+    },
+    "SGR_K": {
+      "description": "钾 (Potassium) - 能谱伽马分量，常见于长石和伊利石。",
+      "unit": "%"
+    },
+    "SGR_TH": {
+      "description": "钍 (Thorium) - 能谱伽马分量，常见于重矿物和高岭石。",
+      "unit": "ppm"
+    },
+    "NMR_TCMR": {
+      "description": "核磁总孔隙度 (Total Porosity) - 核磁共振测量的全部孔隙体积。",
+      "unit": "v/v"
+    },
+    "NMR_K": {
+      "description": "核磁渗透率 (Permeability) - 基于核磁孔隙结构计算的流体流动能力。",
+      "unit": "mD"
+    },
+    "NMR_BVI": {
+      "description": "束缚水体积 (Bulk Volume Irreducible) - 岩石中无法流动的束缚水含量，评价产能的关键。",
+      "unit": "v/v"
+    },
+    "PRESS_FORM": {
+      "description": "地层压力 (Formation Pressure) - 地层孔隙流体的原始压力，用于判断流体系统和油气水界面。",
+      "unit": "psi"
+    },
+    "PRESS_HYD": {
+      "description": "静液柱压力 (Hydrostatic Pressure) - 井筒内泥浆柱的压力。",
+      "unit": "psi"
+    },
+    "MOBILITY": {
+      "description": "流体极大率 (Mobility) - 地层测试获得的流体在储层中的流动难易程度 (K/μ)。",
+      "unit": "mD/cp"
+    },
+    "OPT_DENSITY": {
+      "description": "光学密度 (Optical Density) - 利用光谱分析流体颜色，区分油/气/水及监测泥浆污染。",
+      "unit": "g/cc"
+    },
+    "PUMP_VOL": {
+      "description": "泵抽体积 (Pump Volume) - 地层测试仪泵出的流体总量，用于确保取样纯度。",
+      "unit": "L"
+    },
+    "DST_FLOW": {
+      "description": "DST测试产量 (Flow Rate) - 钻杆测试期间的流体日产量。",
+      "unit": "bbl/d"
+    },
+    "DST_SIP": {
+      "description": "DST关井压力 (Shut-in Pressure) - 关井恢复期间测得的地层压力。",
+      "unit": "psi"
+    },
+    "IMG_GR": {
+      "description": "伽马成像 (Gamma Ray Image) - 井壁伽马分布图，用于看地层层理构造。",
+      "unit": "API"
+    },
+    "IMG_RES": {
+      "description": "电阻率成像 (Resistivity Image) - 高分辨率井壁电阻率图，清晰显示裂缝、孔洞和层理。",
+      "unit": "ohm.m"
+    },
+    "WOB": {
+      "description": "钻压 (Weight on Bit) - 施加在钻头上的重量。",
+      "unit": "klbf"
+    },
+    "RPM": {
+      "description": "转速 (RPM) - 钻柱或钻头的旋转速度。",
+      "unit": "rpm"
+    },
+    "TORQUE": {
+      "description": "扭矩 (Torque) - 旋转钻具所需的力矩。",
+      "unit": "kft.lb"
+    },
+    "ECD": {
+      "description": "循环当量密度 (Equivalent Circulating Density) - 泥浆循环时井底承受的等效压力密度。",
+      "unit": "g/cc"
+    },
+    "ROP": {
+      "description": "钻时/机械钻速 (Rate of Penetration) - 钻头钻进的速度，快慢常反映岩性软硬。",
+      "unit": "m/h"
+    },
+    "GAS_TOTAL": {
+      "description": "全烃 (Total Gas) - 泥浆中检测出的总烃含量，直接指示油气显示。",
+      "unit": "%"
+    },
+    "GAS_C1": {
+      "description": "甲烷 (Methane C1) - 最轻的烃类气体组分。",
+      "unit": "ppm"
+    },
+    "GAS_C2": {
+      "description": "乙烷 (Ethane C2) - 气体组分。",
+      "unit": "ppm"
+    },
+    "GAS_C3": {
+      "description": "丙烷 (Propane C3) - 气体组分。",
+      "unit": "ppm"
+    },
+    "POR_TOTAL": {
+      "description": "总孔隙度 (Total Porosity) - 岩石中所有孔隙空间（包括束缚水和粘土水）占岩石体积的百分比。",
+      "unit": "v/v"
+    },
+    "POR_EFF": {
+      "description": "有效孔隙度 (Effective Porosity) - 岩石中相互连通、允许流体流动的孔隙体积百分比（不含粘土束缚水）。",
+      "unit": "v/v"
+    },
+    "POR_FRAC": {
+      "description": "裂缝孔隙度 (Fracture Porosity) - 由裂缝贡献的孔隙度，常见于碳酸盐岩或致密砂岩。",
+      "unit": "v/v"
+    },
+    "POR_SEC": {
+      "description": "次生/孔洞孔隙度 (Secondary/Vuggy Porosity) - 由溶蚀孔洞或裂缝形成的次生孔隙度。",
+      "unit": "v/v"
+    },
+    "PERM_ABS": {
+      "description": "绝对渗透率 (Absolute Permeability) - 岩石通过单一流体（通常为空气）的能力。",
+      "unit": "mD"
+    },
+    "PERM_HOR": {
+      "description": "水平渗透率 (Horizontal Permeability) - 平行于地层层理方向的渗透率。",
+      "unit": "mD"
+    },
+    "PERM_VERT": {
+      "description": "垂直渗透率 (Vertical Permeability) - 垂直于地层层理方向的渗透率。",
+      "unit": "mD"
+    },
+    "PERM_EFF_OIL": {
+      "description": "油相有效渗透率 (Effective Permeability to Oil) - 在存在其他流体时，油相的渗透渗透率。",
+      "unit": "mD"
+    },
+    "PERM_EFF_GAS": {
+      "description": "气相有效渗透率 (Effective Permeability to Gas) - 气相的渗透率。",
+      "unit": "mD"
+    },
+    "PERM_EFF_WAT": {
+      "description": "水相有效渗透率 (Effective Permeability to Water) - 水相的渗透率。",
+      "unit": "mD"
+    },
+    "PERM_FRAC": {
+      "description": "裂缝渗透率 (Fracture Permeability) - 裂缝系统的渗透率。",
+      "unit": "mD"
+    },
+    "SAT_WATER": {
+      "description": "含水饱和度 (Water Saturation) - 孔隙空间中被水占据的比例 (Total/Archie Sw)。",
+      "unit": "v/v"
+    },
+    "SAT_WATER_IRR": {
+      "description": "束缚水饱和度 (Irreducible Water Saturation) - 毛细管力束缚的最小含水饱和度。",
+      "unit": "v/v"
+    },
+    "SAT_XO": {
+      "description": "冲洗带含水饱和度 (Flushed Zone Water Saturation) - 井壁冲洗带的含水量。",
+      "unit": "v/v"
+    },
+    "SAT_OIL": {
+      "description": "含油饱和度 (Oil Saturation) - 孔隙空间中被油占据的比例。",
+      "unit": "v/v"
+    },
+    "SAT_OIL_RES": {
+      "description": "残余油饱和度 (Residual Oil Saturation) - 无法流动的滞留油。",
+      "unit": "v/v"
+    },
+    "SAT_OIL_MOV": {
+      "description": "可动油饱和度 (Movable Oil Saturation) - 可以流动的油。",
+      "unit": "v/v"
+    },
+    "SAT_GAS": {
+      "description": "含气饱和度 (Gas Saturation) - 孔隙空间中被气占据的比例。",
+      "unit": "v/v"
+    },
+    "VOL_SHALE": {
+      "description": "泥质含量 (Shale Volume) - 地层中泥质（粘土+粉砂）的总体积含量。",
+      "unit": "v/v"
+    },
+    "VOL_CLAY": {
+      "description": "粘土含量 (Clay Volume) - 纯粘土矿物的体积含量。",
+      "unit": "v/v"
+    },
+    "VOL_SAND": {
+      "description": "砂质含量 (Sand Volume) - 砂岩骨架体积含量。",
+      "unit": "v/v"
+    },
+    "VOL_CALC": {
+      "description": "方解石含量 (Calcite Volume) - 碳酸盐岩中方解石含量。",
+      "unit": "v/v"
+    },
+    "VOL_DOL": {
+      "description": "白云石含量 (Dolomite Volume) - 碳酸盐岩中白云石含量。",
+      "unit": "v/v"
+    },
+    "LITH_FACIES": {
+      "description": "岩性代码 (Lithology Facies) - 解释后的岩性分类代码。",
+      "unit": "code"
+    },
+    "FLUID_FLAG": {
+      "description": "流体性质 (Fluid Flag) - 解释结论：油/气/水层。",
+      "unit": "code"
+    },
+    "IGNORE": {
+      "description": "忽略 (Ignore) - 选择此项表示不映射该曲线，仅用于本次会话。",
+      "unit": "-"
+    }
+  },
+  "aliases": {
+    "DEPTH": [
+      "DEPT",
+      "MD",
+      "TVD",
+      "TDEP",
+      "深度",
+      "DEPTH"
+    ],
+    "GR": [
+      "SGR",
+      "CGR",
+      "GR1",
+      "GR2",
+      "GAMMA",
+      "GAM",
+      "GRGC",
+      "自然伽马",
+      "GR_MERGE"
+    ],
+    "SGR_U": [
+      "URAN",
+      "U",
+      "铀"
+    ],
+    "SGR_K": [
+      "POTA",
+      "K_PC",
+      "POT",
+      "钾"
+    ],
+    "SGR_TH": [
+      "THOR",
+      "TH",
+      "钍"
+    ],
+    "RHOB": [
+      "DEN",
+      "DENS",
+      "DENSITY",
+      "DENB",
+      "RHOZ",
+      "ZDEN",
+      "密度",
+      "ZDEN_FACIMAGE_MERGE"
+    ],
+    "NPHI": [
+      "NPOR",
+      "NEUT",
+      "CNL",
+      "PHIN",
+      "TNPH",
+      "NPHI_LS",
+      "中子",
+      "CNCF_FACIAMGE_MERGE"
+    ],
+    "PE": [
+      "PEF",
+      "光电"
+    ],
+    "SP": [
+      "自然电位"
+    ],
+    "CAL": [
+      "CALI",
+      "CALIPER",
+      "井径"
+    ],
+    "DT": [
+      "AC",
+      "DTC",
+      "DTCO",
+      "SONIC",
+      "声波",
+      "DTC_MERGE"
+    ],
+    "DTS": [
+      "DTSM",
+      "DTCS",
+      "SHEAR",
+      "横波",
+      "DTS"
+    ],
+    "RES_DEEP": [
+      "RT",
+      "RD",
+      "RILD",
+      "ILD",
+      "LLD",
+      "HRD",
+      "RLLD",
+      "RLA5",
+      "AT90",
+      "深电阻率",
+      "P40H"
+    ],
+    "RES_MED": [
+      "RIM",
+      "RILM",
+      "ILM",
+      "IMPH",
+      "AT60",
+      "中电阻率",
+      "P28H"
+    ],
+    "RES_SHALLOW": [
+      "RS",
+      "RLLS",
+      "SFL",
+      "MSFL",
+      "LL8",
+      "AT10",
+      "AT20",
+      "浅电阻率",
+      "P16H"
+    ],
+    "RXO": [
+      "RXOZ",
+      "RXO8",
+      "冲洗带电阻率"
+    ],
+    "NMR_TCMR": [
+      "TCMR",
+      "MPHI",
+      "NMR_POR",
+      "核磁孔隙度"
+    ],
+    "NMR_K": [
+      "KSDR",
+      "KTIM",
+      "核磁渗透率"
+    ],
+    "NMR_BVI": [
+      "BVI",
+      "CBW",
+      "束缚水"
+    ],
+    "PRESS_FORM": [
+      "PRS",
+      "FP",
+      "PRE",
+      "地层压力"
+    ],
+    "MOBILITY": [
+      "MOB",
+      "流动性"
+    ],
+    "ROP": [
+      "DRILL_TIME",
+      "RATE",
+      "ROP5",
+      "钻时",
+      "机械钻速"
+    ],
+    "GAS_TOTAL": [
+      "TG",
+      "TOTAL_GAS",
+      "GAS",
+      "全烃"
+    ],
+    "GAS_C1": [
+      "C1",
+      "CH4",
+      "甲烷"
+    ],
+    "GAS_C2": [
+      "C2",
+      "乙烷"
+    ],
+    "GAS_C3": [
+      "C3",
+      "丙烷"
+    ],
+    "WOB": [
+      "钻压"
+    ],
+    "RPM": [
+      "转速"
+    ],
+    "TORQUE": [
+      "TRQ",
+      "扭矩"
+    ],
+    "ECD": [
+      "循环当量密度"
+    ],
+    "POR_TOTAL": [
+      "PHIT",
+      "POR_TOT",
+      "TPOR",
+      "总孔隙度"
+    ],
+    "POR_EFF": [
+      "PHIE",
+      "POR_EFF",
+      "EPOR",
+      "有效孔隙度",
+      "PHIE_NEW"
+    ],
+    "POR_FRAC": [
+      "PHIF",
+      "PORF",
+      "FPOR",
+      "裂缝孔隙度"
+    ],
+    "POR_SEC": [
+      "PHIS",
+      "VUG_POR",
+      "次生孔隙度"
+    ],
+    "PERM_ABS": [
+      "KABS",
+      "KAIR",
+      "绝对渗透率",
+      "PERM_NEW"
+    ],
+    "PERM_HOR": [
+      "PERM_H",
+      "KH",
+      "KHOR",
+      "水平渗透率"
+    ],
+    "PERM_VERT": [
+      "PERM_V",
+      "KV",
+      "KVER",
+      "垂直渗透率"
+    ],
+    "PERM_EFF_OIL": [
+      "KO",
+      "PERM_O",
+      "油相渗透率"
+    ],
+    "PERM_EFF_GAS": [
+      "KG",
+      "PERM_G",
+      "气相渗透率"
+    ],
+    "PERM_EFF_WAT": [
+      "KW",
+      "PERM_W",
+      "水相渗透率"
+    ],
+    "PERM_FRAC": [
+      "KFR",
+      "K_FRAC",
+      "裂缝渗透率"
+    ],
+    "SAT_WATER": [
+      "SW",
+      "SAT_WATER",
+      "SW_ARCHIE",
+      "含水饱和度",
+      "SWE_NEW"
+    ],
+    "SAT_WATER_IRR": [
+      "SWIRR",
+      "SWI",
+      "BVI_SAT",
+      "束缚水饱和度"
+    ],
+    "SAT_XO": [
+      "SXO",
+      "S_RXO",
+      "SW_XO",
+      "冲洗带饱和度"
+    ],
+    "SAT_OIL": [
+      "SO",
+      "SAT_OIL",
+      "含油饱和度"
+    ],
+    "SAT_OIL_RES": [
+      "SOR",
+      "ROS",
+      "残余油饱和度"
+    ],
+    "SAT_OIL_MOV": [
+      "SMO",
+      "MOS",
+      "可动油饱和度"
+    ],
+    "SAT_GAS": [
+      "SG",
+      "SAT_GAS",
+      "含气饱和度"
+    ],
+    "VOL_SHALE": [
+      "VSH",
+      "VSHALE",
+      "VCL",
+      "VCLAY",
+      "SH_VOL",
+      "泥质含量",
+      "SH"
+    ],
+    "VOL_CLAY": [
+      "V_CLAY",
+      "CLAY_VOL",
+      "粘土含量"
+    ],
+    "VOL_SAND": [
+      "VSAND",
+      "VSD",
+      "砂质含量"
+    ],
+    "VOL_CALC": [
+      "VCALC",
+      "VLIME",
+      "方解石含量"
+    ],
+    "VOL_DOL": [
+      "VDOL",
+      "DOL_VOL",
+      "白云石含量"
+    ]
+  }
+}

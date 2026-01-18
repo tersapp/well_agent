@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
 import TrackColumn from './TrackColumn';
 import DepthColumn from './DepthColumn';
 import TrackContextMenu from './TrackContextMenu';
@@ -95,6 +95,70 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
 
     const [viewDepth, setViewDepth] = useState<[number, number] | undefined>(undefined);
     const [currentRange, setCurrentRange] = useState<[number, number]>([minDepth, maxDepth]);
+
+    // Crosshair State
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [cursorState, setCursorState] = useState<{ x: number; y: number; depth: number } | null>(null);
+    const [scrollLeft, setScrollLeft] = useState(0);
+
+    // Helper: Get curve value at a specific depth (with linear interpolation)
+    const getCurveValueAtDepth = useCallback((curveName: string, targetDepth: number): number | null => {
+        const curveData = curves[curveName];
+        if (!curveData || curveData.length === 0) return null;
+
+        // Find the two depth points that bracket the target depth
+        for (let i = 0; i < depth.length - 1; i++) {
+            const d1 = depth[i];
+            const d2 = depth[i + 1];
+            if (d1 === null || d2 === null) continue;
+
+            if ((d1 <= targetDepth && targetDepth <= d2) || (d2 <= targetDepth && targetDepth <= d1)) {
+                const v1 = curveData[i];
+                const v2 = curveData[i + 1];
+                if (v1 === null || v2 === null) return null;
+
+                // Linear interpolation
+                const fraction = (targetDepth - d1) / (d2 - d1);
+                return v1 + fraction * (v2 - v1);
+            }
+        }
+        return null;
+    }, [curves, depth]);
+
+    const handleMouseMove = useCallback((e: React.MouseEvent) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const x = e.clientX - rect.left;
+        const h = rect.height;
+
+        // Update scroll position
+        setScrollLeft(containerRef.current.scrollLeft);
+
+        // TrackColumn Layout Constants
+        const HEADER_HEIGHT = 24;
+        const GRID_TOP = 55;
+        const GRID_BOTTOM = 30;
+
+        const plotTop = HEADER_HEIGHT + GRID_TOP;
+        const plotBottom = h - GRID_BOTTOM;
+        const plotHeight = plotBottom - plotTop;
+
+        if (plotHeight > 0 && y >= plotTop && y <= plotBottom) {
+            const fraction = (y - plotTop) / plotHeight;
+            const rangeStart = viewDepth ? viewDepth[0] : minDepth;
+            const rangeEnd = viewDepth ? viewDepth[1] : maxDepth;
+
+            const depth = rangeStart + fraction * (rangeEnd - rangeStart);
+            setCursorState({ x, y, depth });
+        } else {
+            setCursorState(null);
+        }
+    }, [viewDepth, minDepth, maxDepth]);
+
+    const handleMouseLeave = useCallback(() => {
+        setCursorState(null);
+    }, []);
 
     // Handle view change from graph scroll
     const handleViewDepthChange = useCallback((start: number, end: number) => {
@@ -285,30 +349,122 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
                 </div>
             </div>
 
-            {/* Tracks */}
-            <div className="log-chart-scrollable" style={{ flex: 1, display: 'flex', overflowX: 'scroll', overflowY: 'hidden' }}>
-                <DepthColumn minDepth={minDepth} maxDepth={maxDepth} width={DEPTH_TRACK_WIDTH} viewDepth={viewDepth} onViewDepthChange={handleViewDepthChange} onDoubleClick={() => setDepthModal({ visible: true })} />
-                {visibleTracks.map((name) => (
-                    <TrackColumn
-                        key={name}
-                        name={name}
-                        depth={depth}
-                        values={curves[name] || []}
-                        config={getTrackConfig(name)}
-                        minDepth={minDepth}
-                        maxDepth={maxDepth}
-                        width={TRACK_WIDTH}
-                        viewDepth={viewDepth}
-                        lithologyMap={lithologyConfigs[name]} // Pass config
-                        onViewDepthChange={handleViewDepthChange}
-                        onContextMenu={handleContextMenu}
-                        onDoubleClickScale={handleDoubleClickScale}
-                        onDragStart={handleDragStart}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={handleDrop}
-                    />
-                ))}
+            {/* Viewport Wrapper */}
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                <div
+                    ref={(el) => {
+                        // @ts-ignore
+                        containerRef.current = el;
+                    }}
+                    className="log-chart-scrollable"
+                    style={{ width: '100%', height: '100%', display: 'flex', overflowX: 'scroll', overflowY: 'hidden' }}
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                >
+                    <DepthColumn minDepth={minDepth} maxDepth={maxDepth} width={DEPTH_TRACK_WIDTH} viewDepth={viewDepth} onViewDepthChange={handleViewDepthChange} onDoubleClick={() => setDepthModal({ visible: true })} />
+                    {visibleTracks.map((name) => (
+                        <TrackColumn
+                            key={name}
+                            name={name}
+                            depth={depth}
+                            values={curves[name] || []}
+                            config={getTrackConfig(name)}
+                            minDepth={minDepth}
+                            maxDepth={maxDepth}
+                            width={TRACK_WIDTH}
+                            viewDepth={viewDepth}
+                            lithologyMap={lithologyConfigs[name]} // Pass config
+                            onViewDepthChange={handleViewDepthChange}
+                            onContextMenu={handleContextMenu}
+                            onDoubleClickScale={handleDoubleClickScale}
+                            onDragStart={handleDragStart}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={handleDrop}
+                        />
+                    ))}
+                </div>
+
+                {/* Crosshair Overlay (Fixed to Viewport) */}
+                {cursorState && (
+                    <>
+                        {/* Horizontal Line */}
+                        <div style={{
+                            position: 'absolute',
+                            left: DEPTH_TRACK_WIDTH, // Start after depth track
+                            right: 0,
+                            top: cursorState.y,
+                            height: 1,
+                            backgroundColor: '#ef4444', // Red color
+                            pointerEvents: 'none',
+                            zIndex: 100,
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
+                        }} />
+
+                        {/* Depth Label - Fixed in Depth Column */}
+                        <div style={{
+                            position: 'absolute',
+                            left: DEPTH_TRACK_WIDTH / 2,
+                            top: cursorState.y - 10,
+                            transform: 'translateX(-50%)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.95)',
+                            color: 'white',
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontWeight: 'bold',
+                            pointerEvents: 'none',
+                            zIndex: 101,
+                            whiteSpace: 'nowrap',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                        }}>
+                            {cursorState.depth.toFixed(2)} m
+                        </div>
+
+                        {/* Curve Value Labels - Centered in each visible track */}
+                        {visibleTracks.map((trackName, index) => {
+                            const value = getCurveValueAtDepth(trackName, cursorState.depth);
+                            if (value === null) return null;
+
+                            // Calculate the center position of this track column
+                            // Account for scroll position
+                            const trackStartX = DEPTH_TRACK_WIDTH + (index * TRACK_WIDTH) - scrollLeft;
+                            const trackCenterX = trackStartX + (TRACK_WIDTH / 2);
+
+                            // Only render if track is visible in viewport
+                            const containerWidth = containerRef.current?.clientWidth || 800;
+                            if (trackCenterX < DEPTH_TRACK_WIDTH || trackCenterX > containerWidth) {
+                                return null;
+                            }
+
+                            return (
+                                <div
+                                    key={trackName}
+                                    style={{
+                                        position: 'absolute',
+                                        left: trackCenterX,
+                                        top: cursorState.y - 10,
+                                        transform: 'translateX(-50%)',
+                                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                                        color: '#fbbf24',
+                                        padding: '2px 6px',
+                                        borderRadius: 3,
+                                        fontSize: 10,
+                                        fontWeight: 'bold',
+                                        pointerEvents: 'none',
+                                        zIndex: 102,
+                                        whiteSpace: 'nowrap',
+                                        border: '1px solid rgba(251, 191, 36, 0.5)'
+                                    }}
+                                >
+                                    {value.toFixed(2)}
+                                </div>
+                            );
+                        })}
+                    </>
+                )}
             </div>
+
+
 
             <TrackContextMenu
                 visible={contextMenu.visible}
@@ -337,7 +493,7 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
                 onClose={() => setLithConfigModal(prev => ({ ...prev, visible: false }))}
                 onSave={handleSaveLithologyMap}
             />
-        </div>
+        </div >
     );
 });
 
