@@ -21,6 +21,7 @@ interface CurvePanelProps {
     highlightRange?: { start: number; end: number };
     isFullscreen?: boolean;
     onToggleFullscreen?: () => void;
+    onAnalysisRequest?: (start: number, end: number, note: string) => void;
 }
 
 const CurvePanel: React.FC<CurvePanelProps> = ({
@@ -31,6 +32,7 @@ const CurvePanel: React.FC<CurvePanelProps> = ({
     highlightRange,
     isFullscreen = false,
     onToggleFullscreen,
+    onAnalysisRequest,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const logChartRef = useRef<LogChartRef>(null);
@@ -260,6 +262,7 @@ const CurvePanel: React.FC<CurvePanelProps> = ({
                         highlightRange={highlightRange}
                         isFullscreen={isFullscreen}
                         onToggleFullscreen={onToggleFullscreen}
+                        onAnalysisRequest={onAnalysisRequest}
                     />
                 ) : (
                     <div style={{

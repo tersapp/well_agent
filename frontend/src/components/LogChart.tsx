@@ -4,7 +4,8 @@ import DepthColumn from './DepthColumn';
 import TrackContextMenu from './TrackContextMenu';
 import ScaleEditModal from './ScaleEditModal';
 import DepthRangeModal from './DepthRangeModal';
-import LithologyConfigModal from './LithologyConfigModal'; // Import
+import LithologyConfigModal from './LithologyConfigModal';
+import AnalysisPopup from './AnalysisPopup';
 import { FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons';
 
 interface LogChartProps {
@@ -13,6 +14,7 @@ interface LogChartProps {
     highlightRange?: { start: number; end: number };
     isFullscreen?: boolean;
     onToggleFullscreen?: () => void;
+    onAnalysisRequest?: (start: number, end: number, note: string) => void;
 }
 
 export interface LogChartRef {
@@ -75,15 +77,42 @@ const DEPTH_TRACK_WIDTH = 80;
 const LogChart = forwardRef<LogChartRef, LogChartProps>(({
     depth,
     curves,
-    highlightRange,
     isFullscreen = false,
     onToggleFullscreen,
+    onAnalysisRequest,
 }, ref) => {
 
     const [trackOrder, setTrackOrder] = useState<string[]>([]);
     const [hiddenTracks, setHiddenTracks] = useState<Set<string>>(new Set());
     const [customScales, setCustomScales] = useState<Record<string, { min: number; max: number }>>({});
     const [lithologyModeTracks, setLithologyModeTracks] = useState<Set<string>>(new Set());
+
+    const [isAltKeyPressed, setIsAltKeyPressed] = useState(false);
+    const [selectionStart, setSelectionStart] = useState<{ y: number; depth: number } | null>(null);
+    const [selectionEnd, setSelectionEnd] = useState<{ y: number; depth: number } | null>(null);
+    const [popupState, setPopupState] = useState<{ visible: boolean; x: number; y: number; depthRange: [number, number] }>({
+        visible: false, x: 0, y: 0, depthRange: [0, 0]
+    });
+
+    // Alt Key Detection
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Alt') setIsAltKeyPressed(true);
+        };
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.key === 'Alt') {
+                setIsAltKeyPressed(false);
+                setSelectionStart(null); // Cancel selection if Alt is released
+                setSelectionEnd(null);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, []);
 
     // Lithology Configs: TrackName -> { Value -> { Color, Label } }
     const [lithologyConfigs, setLithologyConfigs] = useState<Record<string, Record<number, { color: string, label: string }>>>({});
@@ -150,15 +179,88 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
             const rangeEnd = viewDepth ? viewDepth[1] : maxDepth;
 
             const depth = rangeStart + fraction * (rangeEnd - rangeStart);
+
+            // Always show cursor state (crosshair)
             setCursorState({ x, y, depth });
+
+            // Only update selection if Alt is pressed
+            if (isAltKeyPressed && selectionStart) {
+                setSelectionEnd({ y, depth });
+            }
         } else {
             setCursorState(null);
         }
-    }, [viewDepth, minDepth, maxDepth]);
+    }, [viewDepth, minDepth, maxDepth, isAltKeyPressed, selectionStart]);
 
     const handleMouseLeave = useCallback(() => {
         setCursorState(null);
-    }, []);
+        if (selectionStart) {
+            setSelectionStart(null);
+            setSelectionEnd(null);
+        }
+    }, [selectionStart]);
+
+    const handleMouseDown = useCallback(() => {
+        if (!isAltKeyPressed || !cursorState) return;
+        // Start selection
+        setSelectionStart({ y: cursorState.y, depth: cursorState.depth });
+        setSelectionEnd({ y: cursorState.y, depth: cursorState.depth });
+        setPopupState(prev => ({ ...prev, visible: false })); // Hide popup if open
+    }, [isAltKeyPressed, cursorState]);
+
+    const handleMouseUp = useCallback(() => {
+        if (!isAltKeyPressed || !selectionStart || !selectionEnd) {
+            // If Alt is pressed but no drag, it might be a click (point inspection)
+            if (isAltKeyPressed && cursorState && !selectionStart) {
+                setPopupState({
+                    visible: true,
+                    x: cursorState.x, // Adjusted to use cursorState.x for popup positioning if needed, or keep previous logic
+                    y: cursorState.y,
+                    depthRange: [cursorState.depth, cursorState.depth]
+                });
+            }
+            setSelectionStart(null);
+            setSelectionEnd(null);
+            return;
+        }
+
+        // Finalize selection
+        const d1 = selectionStart.depth;
+        const d2 = selectionEnd.depth;
+        const start = Math.min(d1, d2);
+        const end = Math.max(d1, d2);
+
+        // If range is very small, treat as point
+        if (Math.abs(end - start) < 0.05) {
+            setPopupState({
+                visible: true,
+                x: cursorState?.x ?? 0,
+                y: cursorState?.y ?? 0,
+                depthRange: [start, start]
+            });
+        } else {
+            setPopupState({
+                visible: true,
+                x: cursorState?.x ?? 0,
+                y: cursorState?.y ?? 0,
+                depthRange: [start, end]
+            });
+        }
+
+        // Don't clear selection immediately so user can see what they selected? 
+        // Or clear it and show popup. Let's clear for now as the popup shows the range.
+        setSelectionStart(null);
+        setSelectionEnd(null);
+
+    }, [isAltKeyPressed, selectionStart, selectionEnd, cursorState]);
+
+
+    const handleAnalysisConfirm = (note: string) => {
+        if (onAnalysisRequest) {
+            onAnalysisRequest(popupState.depthRange[0], popupState.depthRange[1], note);
+        }
+        setPopupState(prev => ({ ...prev, visible: false }));
+    };
 
     // Handle view change from graph scroll
     const handleViewDepthChange = useCallback((start: number, end: number) => {
@@ -317,7 +419,14 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
     }, []);
 
     const [draggedTrack, setDraggedTrack] = useState<string | null>(null);
-    const handleDragStart = useCallback((e: React.DragEvent, trackName: string) => { setDraggedTrack(trackName); e.dataTransfer.effectAllowed = 'move'; }, []);
+    const handleDragStart = useCallback((e: React.DragEvent, trackName: string) => {
+        if (isAltKeyPressed) {
+            e.preventDefault();
+            return;
+        }
+        setDraggedTrack(trackName);
+        e.dataTransfer.effectAllowed = 'move';
+    }, [isAltKeyPressed]);
     const handleDrop = useCallback((e: React.DragEvent, targetTrackName: string) => {
         e.preventDefault(); if (!draggedTrack || draggedTrack === targetTrackName) return;
         const newOrder = [...visibleTracks]; const fromIdx = newOrder.indexOf(draggedTrack); const toIdx = newOrder.indexOf(targetTrackName);
@@ -357,9 +466,19 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
                         containerRef.current = el;
                     }}
                     className="log-chart-scrollable"
-                    style={{ width: '100%', height: '100%', display: 'flex', overflowX: 'scroll', overflowY: 'hidden' }}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={handleMouseLeave}
+                    onMouseDown={handleMouseDown}
+                    onMouseUp={handleMouseUp}
+                    style={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        overflowX: 'scroll',
+                        overflowY: 'hidden',
+                        cursor: isAltKeyPressed ? 'crosshair' : 'default',
+                        userSelect: 'none' // Prevent text selection while dragging
+                    }}
                 >
                     <DepthColumn minDepth={minDepth} maxDepth={maxDepth} width={DEPTH_TRACK_WIDTH} viewDepth={viewDepth} onViewDepthChange={handleViewDepthChange} onDoubleClick={() => setDepthModal({ visible: true })} />
                     {visibleTracks.map((name) => (
@@ -462,6 +581,31 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
                         })}
                     </>
                 )}
+
+                {/* Selection Overlay */}
+                {isAltKeyPressed && selectionStart && selectionEnd && (
+                    <div style={{
+                        position: 'absolute',
+                        left: DEPTH_TRACK_WIDTH,
+                        right: 0,
+                        top: Math.min(selectionStart.y, selectionEnd.y),
+                        height: Math.abs(selectionEnd.y - selectionStart.y),
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)', // blue-500 with opacity
+                        borderTop: '1px solid rgba(59, 130, 246, 0.5)',
+                        borderBottom: '1px solid rgba(59, 130, 246, 0.5)',
+                        pointerEvents: 'none',
+                        zIndex: 90
+                    }} />
+                )}
+
+                <AnalysisPopup
+                    visible={popupState.visible}
+                    x={popupState.x}
+                    y={popupState.y}
+                    depthRange={popupState.depthRange}
+                    onConfirm={handleAnalysisConfirm}
+                    onCancel={() => setPopupState(prev => ({ ...prev, visible: false }))}
+                />
             </div>
 
 

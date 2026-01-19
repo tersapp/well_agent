@@ -28,7 +28,7 @@ interface Message {
 }
 
 const App: React.FC = () => {
-    const [activeView, setActiveView] = useState<'analysis' | 'report' | 'history'>('analysis');
+    const [activeView, setActiveView] = useState<'analysis' | 'report' | 'history' | 'generation' | 'logs'>('analysis');
     const [logData, setLogData] = useState<LogData | null>(null);
     const [sessionId, setSessionId] = useState<string>('');
     const [isLoading, setIsLoading] = useState(false);
@@ -37,6 +37,8 @@ const App: React.FC = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false);
 
     // Curve mapping state
     const [showMappingModal, setShowMappingModal] = useState(false);
@@ -265,26 +267,44 @@ const App: React.FC = () => {
             {!isFullscreen && (
                 <Sidebar
                     activeView={activeView}
-                    onViewChange={setActiveView}
+                    onViewChange={(view: any) => setActiveView(view)}
                     messages={messages}
                     progressStatus={progressStatus}
+                    collapsed={sidebarCollapsed}
+                    onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
                 />
             )}
 
             <main className="main-content" style={{ flex: 1 }}>
                 {activeView === 'history' ? (
                     <HistoryPage onNavigateBack={() => setActiveView('analysis')} />
+                ) : activeView === 'generation' ? (
+                    <div className="placeholder-view" style={{ padding: 'var(--spacing-xl)', textAlign: 'center' }}>
+                        <h2>智能生成</h2>
+                        <p style={{ color: 'var(--text-muted)', marginTop: 16 }}>新功能开发中，敬请期待...</p>
+                    </div>
+                ) : activeView === 'logs' ? (
+                    <div className="placeholder-view" style={{ padding: 'var(--spacing-xl)', textAlign: 'center' }}>
+                        <h2>操作日志</h2>
+                        <p style={{ color: 'var(--text-muted)', marginTop: 16 }}>日志记录系统初始化中...</p>
+                    </div>
+                ) : activeView === 'report' ? (
+                    <div className="placeholder-view" style={{ padding: 'var(--spacing-xl)', textAlign: 'center' }}>
+                        <h2>报告生成</h2>
+                        <p style={{ color: 'var(--text-muted)', marginTop: 16 }}>自动化报告生成模块开发中...</p>
+                    </div>
                 ) : (
                     <div style={{ display: 'flex', flex: 1, overflow: 'hidden', height: '100%' }}>
                         {/* Curve Panel - Constrained width */}
                         <div style={{
                             flex: 1,
                             minWidth: 400,
-                            maxWidth: isFullscreen ? '100%' : 'calc(100% - 420px)',
+                            maxWidth: isFullscreen ? '100%' : `calc(100% - ${chatPanelCollapsed ? '40px' : '420px'})`,
                             display: 'flex',
                             flexDirection: 'column',
                             height: '100%',
                             overflow: 'hidden',
+                            transition: 'max-width 0.3s ease'
                         }}>
                             <CurvePanel
                                 logData={logData}
@@ -293,18 +313,35 @@ const App: React.FC = () => {
                                 onRestoreSession={handleRestoreSession}
                                 isFullscreen={isFullscreen}
                                 onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+                                onAnalysisRequest={(start, end, note) => {
+                                    setActiveView('analysis');
+                                    setChatPanelCollapsed(false);
+                                    handleStartAnalysis({
+                                        startDepth: start,
+                                        endDepth: end,
+                                        focusNote: note,
+                                    });
+                                }}
                             />
                         </div>
 
                         {/* Chat Panel - Hidden in fullscreen */}
                         {!isFullscreen && (
-                            <div style={{ width: 420, borderLeft: '1px solid var(--border-color)' }}>
+                            <div style={{
+                                width: chatPanelCollapsed ? 40 : 420,
+                                borderLeft: '1px solid var(--border-color)',
+                                transition: 'width 0.3s ease',
+                                overflow: 'hidden',
+                                position: 'relative'
+                            }}>
                                 <ChatPanel
                                     messages={messages}
                                     isAnalyzing={isAnalyzing}
                                     progressStatus={progressStatus}
                                     onStartAnalysis={handleRequestAnalysis}
                                     canAnalyze={!!logData && !isAnalyzing}
+                                    collapsed={chatPanelCollapsed}
+                                    onToggleCollapse={() => setChatPanelCollapsed(!chatPanelCollapsed)}
                                 />
                             </div>
                         )}

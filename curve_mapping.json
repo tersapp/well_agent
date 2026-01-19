@@ -444,7 +444,8 @@
       "PHIT",
       "POR_TOT",
       "TPOR",
-      "总孔隙度"
+      "总孔隙度",
+      "POR"
     ],
     "POR_EFF": [
       "PHIE",
@@ -468,7 +469,8 @@
       "KABS",
       "KAIR",
       "绝对渗透率",
-      "PERM_NEW"
+      "PERM_NEW",
+      "PERM"
     ],
     "PERM_HOR": [
       "PERM_H",
@@ -507,7 +509,8 @@
       "SAT_WATER",
       "SW_ARCHIE",
       "含水饱和度",
-      "SWE_NEW"
+      "SWE_NEW",
+      "SWE_SIM"
     ],
     "SAT_WATER_IRR": [
       "SWIRR",

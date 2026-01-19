@@ -1,0 +1,32 @@
+tools:
+  - name: find_extreme_values
+    entry_point: find_extremes:execute
+    description: Finds the minimum or maximum value of a specific curve (e.g., GR, POR, RHOB) within a specified depth range. Essential for identifying purest lithology intervals (min GR) or tightest streaks.
+    trigger_keywords:
+        - extreme
+        - max
+        - min
+        - peak
+        - lowest
+        - highest
+        - 极值
+        - 最大值
+        - 最小值
+    parameters:
+      type: object
+      properties:
+        curve_name:
+          type: string
+          description: "The mnemonic of the curve to analyze (e.g., 'GR', 'NPHI', 'RHOB')."
+        mode:
+          type: string
+          enum: [min, max]
+          description: "Whether to find the minimum or maximum value. Default is 'min'."
+        start_depth:
+          type: number
+          description: "Optional start depth for the analysis window."
+        end_depth:
+          type: number
+          description: "Optional end depth for the analysis window."
+      required:
+        - curve_name

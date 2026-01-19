@@ -2,25 +2,28 @@
 # 每次分析时注入所有智能体的上下文
 
 project:
-  name: "示例油田区块"
-  basin: "渤海湾盆地"
-  formation: "东营组"
+  name: "西湖凹陷中深层超深层项目"
+  basin: "东海陆架盆地 - 西湖凹陷"
+  formation: "花港组 / 平湖组 (中深层-超深层)"
 
 geology:
-  target_lithology: "细砂岩/粉砂岩互层"
-  depositional_environment: "湖相三角洲前缘"
-  expected_porosity_range: "12-18%"
-  expected_permeability_range: "5-50 mD"
-  reservoir_heterogeneity: "中等-较强"
+  target_lithology: "砂泥岩地层"
+  depositional_environment: "辨状河三角洲 - 湖泊沉积体系"
+  expected_porosity_range: "5-12% (低孔-特低孔)"
+  expected_permeability_range: "0.1-10 mD (特低渗-低渗)"
+  reservoir_heterogeneity: "强 (受成岩作用和沉积微相控制)"
+  key_diagenesis: "压实作用强，钙质/伊利石胶结致密化；发育次生溶蚀孔隙'甜点'"
 
 fluids:
-  oil_type: "中质原油"
-  oil_density_gcc: 0.85
-  formation_water_resistivity_ohmm: 0.08
-  gas_oil_ratio_m3m3: 50
-  formation_temperature_celsius: 85
+  oil_type: "凝析气 / 天然气"
+  oil_density_gcc: 0.78
+  formation_water_resistivity_ohmm: 0.15
+  gas_oil_ratio_m3m3: 1000
+  formation_temperature_celsius: 140
+  pressure_system: "常压-超高压 (深层普遍发育异常高压)"
 
 interpretation_notes:
-  - "目标层段可能存在低阻油层"
-  - "储层非均质性较强，需关注夹层分布"
-  - "部分层段存在钙质胶结"
+  - "重点识别'甜点'储层：寻找次生溶蚀孔隙发育带和超压保护带"
+  - "储层整体致密，需严格区分有效储层与致密干层 (物性下限分析)"
+  - "注意深层低渗背景下的产能评价，关注微裂缝对渗透率的贡献"
+  - "警惕钙质胶结层（高阻高密）对物性的破坏"

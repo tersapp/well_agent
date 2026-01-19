@@ -97,6 +97,11 @@ body {
   display: flex;
   flex-direction: column;
   transition: width 0.3s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 64px;
 }
 
 .sidebar-header {

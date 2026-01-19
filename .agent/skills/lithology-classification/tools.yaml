@@ -1,0 +1,91 @@
+tools:
+  - name: analyze_crossplot
+    entry_point: crossplot:analyze_crossplot
+    description: 中子-密度交会分析，识别岩性和矿物骨架（砂岩/石灰岩/白云岩/泥岩）
+    trigger_keywords:
+      - 交会
+      - crossplot
+      - 中子密度
+      - 分离
+      - 图版
+      - 骨架
+      - 密度中子
+      - 交会特征
+      - 交会图
+    use_cases: 当用户询问交会图特征、中子密度分离、岩性识别、或矿物骨架时使用
+    parameters:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [ND, MN]
+          description: "交会图类型: ND=中子密度交会, MN=M-N图版"
+        rhob_curve:
+          type: string
+          description: "密度曲线名称，默认'RHOB'"
+        nphi_curve:
+          type: string
+          description: "中子曲线名称，默认'NPHI'"
+        dt_curve:
+          type: string
+          description: "声波曲线名称(MN图版需要)，默认'DT'"
+
+  - name: calculate_vsh
+    entry_point: quantitative:calculate_vsh
+    description: 泥质含量(Vsh)定量计算，支持多种校正方法
+    trigger_keywords:
+      - 泥质含量
+      - Vsh
+      - 砂泥比
+      - shale volume
+      - 泥质体积
+      - 砂岩纯净度
+    use_cases: 当需要定量计算泥质体积分数、判断砂岩纯净度时使用
+    parameters:
+      type: object
+      properties:
+        gr_curve:
+          type: string
+          description: "自然伽马曲线名称，默认'GR'"
+        method:
+          type: string
+          enum: [linear, larionov_tertiary, larionov_old, steiber, clavier]
+          description: "计算方法: linear=线性, larionov_tertiary=拉廖诺夫新地层(默认), larionov_old=拉廖诺夫老地层, steiber=斯蒂伯, clavier=克拉维尔"
+        gr_min:
+          type: number
+          description: "纯砂岩GR基线，默认自动计算P5"
+        gr_max:
+          type: number
+          description: "纯泥岩GR基线，默认自动计算P95"
+
+  - name: identify_curve_shape
+    entry_point: morphology:identify_curve_shape
+    description: 曲线形态识别（钟型Bell/漏斗型Funnel/箱型Box），用于沉积相分析
+    trigger_keywords:
+      - 曲线形态
+      - bell
+      - funnel
+      - box
+      - 沉积相
+      - 形态
+      - 钟型
+      - 漏斗
+      - 箱型
+      - 正旋回
+      - 反旋回
+    use_cases: 分析GR/SP曲线形态指示沉积环境（三角洲前缘、河道充填等）时使用
+    parameters:
+      type: object
+      properties:
+        curve_name:
+          type: string
+          description: "要分析的曲线名称，默认'GR'"
+        depth_start:
+          type: number
+          description: "分析起始深度"
+        depth_end:
+          type: number
+          description: "分析结束深度"
+        window_size:
+          type: integer
+          description: "平滑窗口大小，默认5"

@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from backend.data_processing.las_parser import LogDataParser
 from backend.data_processing.quality_control import DataQualityController
 from backend.core.workflow import app as workflow_app
+from backend.core.serialize_utils import convert_numpy_types
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Well Agent API",
     description="API for Well Logging Multi-Agent System",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 # CORS for frontend
@@ -86,13 +87,13 @@ async def parse_las_file(file: UploadFile = File(...)):
         curve_info = log_data.get('curve_info', {})
         mapping_result = mapper.map_curves(curve_names, curve_info)
         
-        return {
+        return convert_numpy_types({
             "success": True,
             "session_id": session_id,
             "data": log_data,
             "qc_report": qc_report,
             "curve_mapping": mapping_result
-        }
+        })
         
     except Exception as e:
         logger.error(f"Failed to parse LAS: {e}")
@@ -185,6 +186,7 @@ def extract_depth_range_data(log_data: dict, start_depth: float, end_depth: floa
     """
     Extract a subset of log data for the specified depth range.
     Returns a new log_data dict with only data within [start_depth, end_depth].
+    Handles single-point requests by finding nearest point and providing context.
     """
     curves = log_data.get('curves', {})
     
@@ -205,15 +207,40 @@ def extract_depth_range_data(log_data: dict, start_depth: float, end_depth: floa
     
     depth_values = curves[depth_key]
     
-    # Find indices within the depth range
+    # strict range check first
     indices = []
     for i, d in enumerate(depth_values):
         if d is not None and start_depth <= d <= end_depth:
             indices.append(i)
     
+    # NEW FIX FOR SINGLE POINT OR NEAR-MISSES
+    if not indices and depth_values:
+        # Find index of the nearest point
+        # Filter out Nones first to avoid comparison errors
+        valid_points = [(i, d) for i, d in enumerate(depth_values) if d is not None]
+        if valid_points:
+            nearest_idx, nearest_val = min(valid_points, key=lambda x: abs(x[1] - start_depth))
+            
+            # If start_depth and end_depth are very close (point selection)
+            # OR if we found no points in the strict range
+            is_point_selection = abs(end_depth - start_depth) < 0.001
+            
+            if is_point_selection:
+                # For point inspection, provide a small window for context (e.g. ±10 points)
+                window_size = 10
+                start_i = max(0, nearest_idx - window_size)
+                end_i = min(len(depth_values), nearest_idx + window_size + 1)
+                indices = list(range(start_i, end_i))
+                logger.info(f"Point analysis at {start_depth}m: providing context window of {len(indices)} points (Depth: {depth_values[start_i]:.2f}-{depth_values[end_i-1]:.2f}m).")
+            else:
+                # For a range that just missed all points (e.g. inside a gap), at least return the nearest one
+                # to prevent "No data" errors, though usually ranges should catch something.
+                indices = [nearest_idx]
+                logger.info(f"Range analysis {start_depth}-{end_depth}m: no exact matches, using nearest point at {nearest_val}m.")
+    
     if not indices:
-        logger.warning(f"No data found in depth range {start_depth}-{end_depth}")
-        return {'curves': {}, 'metadata': log_data.get('metadata', {})}
+        logger.warning(f"No data found in depth range {start_depth}-{end_depth} and no nearest point found.")
+        return {'curves': {}, 'metadata': log_data.get('metadata', {}), 'curve_info': log_data.get('curve_info', {})}
     
     # Slice all curves
     sliced_curves = {}
@@ -252,16 +279,20 @@ def format_workflow_result(result: dict) -> dict:
                     match = re.search(r'Conf=(\d+\.?\d*)', content)
                     if match:
                         confidence = float(match.group(1))
-                except:
-                    pass
+                        logger.info(f"DEBUG: Extracted confidence {confidence} from 'Conf=' format in message from {agent_name}")
+                except Exception as e:
+                    logger.warning(f"DEBUG: Failed to parse Conf= format: {e}")
             # Format 2: "(Conf: 0.75)"
             elif '(Conf:' in content:
                 try:
                     conf_start = content.index('(Conf:') + 6
                     conf_end = content.index(')', conf_start)
                     confidence = float(content[conf_start:conf_end].strip())
-                except:
-                    pass
+                    logger.info(f"DEBUG: Extracted confidence {confidence} from '(Conf:' format in message from {agent_name}")
+                except Exception as e:
+                    logger.warning(f"DEBUG: Failed to parse (Conf: format: {e}")
+            
+            logger.info(f"DEBUG: Message from {agent_name} final confidence: {confidence}")
             
             messages.append({
                 "agent": agent_name,
@@ -284,9 +315,15 @@ def format_workflow_result(result: dict) -> dict:
         final_decision = {
             "status": final_output.get("status", "UNKNOWN"),
             "decision": final_output.get("decision", "N/A"),
-            "confidence": final_output.get("confidence", 0.0),
+            "confidence": 0.0,
             "reasoning": final_output.get("reasoning", "")
         }
+        
+        # Safely parse confidence
+        try:
+            final_decision["confidence"] = float(final_output.get("confidence", 0.0))
+        except (ValueError, TypeError):
+             final_decision["confidence"] = 0.0
     
     return {
         "success": True,
@@ -421,7 +458,7 @@ async def run_analysis(request: AnalysisRequest, session_id: str = Query(default
             logger.debug(f"Failed to setup conversation save: {save_error}")
             # Don't fail the request if save setup fails
         
-        return formatted
+        return convert_numpy_types(formatted)
         
     except Exception as e:
         logger.error(f"Analysis failed: {e}", exc_info=True)
@@ -592,11 +629,21 @@ async def analyze_stream(request: AnalysisRequest, session_id: str = Query(...))
                             
                             # Extract confidence
                             confidence = 0.0
+                            # Extract confidence (Robust version)
+                            confidence = 0.0
                             if "Conf=" in content:
                                 try:
-                                    conf_start = content.index("Conf=") + 5
-                                    conf_end = content.index(".", conf_start)
-                                    confidence = float(content[conf_start:conf_end])
+                                    import re
+                                    match = re.search(r'Conf=(\d+\.?\d*)', content)
+                                    if match:
+                                        confidence = float(match.group(1))
+                                except:
+                                    pass
+                            elif "(Conf:" in content:
+                                try:
+                                    conf_start = content.index("(Conf:") + 6
+                                    conf_end = content.index(")", conf_start)
+                                    confidence = float(content[conf_start:conf_end].strip())
                                 except:
                                     pass
                             

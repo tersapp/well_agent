@@ -8,7 +8,7 @@ agents:
     color: "#f59e0b"
     module: backend.agents.lithology_agent
     class: LithologyAgent
-    skills:
+    skill_packs:
       - lithology-classification
     capabilities:
       - 岩性识别 (砂岩/泥岩/碳酸盐岩/火山岩)
@@ -137,6 +137,8 @@ agents:
     color: "#8b5cf6"
     module: backend.agents.mineralogy_agent
     class: MineralogyAgent
+    skill_packs:
+      - lithology-classification
     capabilities:
       - 矿物组分分析 (Vol_Cal, Vol_Dol, Vol_Sand)
       - 自然能谱分析 (U, K, Th)

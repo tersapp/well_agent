@@ -107,7 +107,7 @@ def load_agents(force_reload: bool = False) -> Dict[str, Dict[str, Any]]:
                 'color': agent_def.get('color', '#888888'),
                 'capabilities': agent_def.get('capabilities', []),
                 'keywords': agent_def.get('keywords', []),
-                'skills': agent_def.get('skills', []),
+                'skill_packs': agent_def.get('skill_packs', agent_def.get('skills', [])),
                 'is_arbitrator': agent_def.get('is_arbitrator', False)
             }
             
@@ -122,12 +122,17 @@ def load_agents(force_reload: bool = False) -> Dict[str, Dict[str, Any]]:
     return agents
 
 
-def get_agent_skills(agent_key: str) -> List[str]:
-    """Get the list of skill names for a specific agent"""
+def get_agent_skill_packs(agent_key: str) -> List[str]:
+    """Get the list of skill pack names for a specific agent"""
     agent = get_agent(agent_key)
     if agent:
-        return agent.get('skills', [])
+        return agent.get('skill_packs', [])
     return []
+
+
+def get_agent_skills(agent_key: str) -> List[str]:
+    """Alias for get_agent_skill_packs for backward compatibility"""
+    return get_agent_skill_packs(agent_key)
 
 
 def get_agent(key: str) -> Optional[Dict[str, Any]]:
@@ -168,6 +173,42 @@ def build_team_description() -> str:
     for key, info in specialists.items():
         capabilities = ', '.join(info.get('capabilities', []))
         lines.append(f"- **{info['name']}** ({key}): {capabilities}")
+    
+    return "\n".join(lines)
+
+
+def build_team_description_with_tools() -> str:
+    """
+    Build a description of all specialist agents INCLUDING their available tools.
+    Used by Arbitrator for intelligent routing based on tool availability.
+    """
+    from backend.skills.registry import get_skill_registry
+    registry = get_skill_registry()
+    
+    specialists = get_specialist_agents()
+    lines = []
+    
+    for key, info in specialists.items():
+        capabilities = ', '.join(info.get('capabilities', []))
+        skill_packs = info.get('skill_packs', [])
+        
+        # Get tools for this agent
+        tools = registry.list_tools_for_agent(skill_packs)
+        tool_names = [t['name'] for t in tools]
+        
+        # Build tool keyword summary
+        all_keywords = []
+        for t in tools:
+            all_keywords.extend(t.get('trigger_keywords', []))
+        
+        lines.append(f"### {info['name']} ({key})")
+        lines.append(f"- 职责: {capabilities}")
+        if tool_names:
+            lines.append(f"- 可用工具: {', '.join(tool_names)}")
+            lines.append(f"- 工具触发词: {', '.join(all_keywords[:10])}...")  # Limit keywords
+        else:
+            lines.append(f"- 可用工具: 无专用工具")
+        lines.append("")
     
     return "\n".join(lines)
 

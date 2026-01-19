@@ -7,15 +7,25 @@ from backend.core.llm_service import llm_service
 
 logger = logging.getLogger(__name__)
 
+
 class BaseAgent(ABC):
     """
     Abstract Base Class for all Well Logging Agents.
-    Defines the standard interface and common capabilities.
+    Defines the standard interface and common capabilities including tool usage.
     """
     
-    def __init__(self, name: str, role_description: str):
+    def __init__(self, name: str, role_description: str, skill_packs: List[str] = None):
+        """
+        Initialize the agent.
+        
+        Args:
+            name: Agent name/identifier
+            role_description: System prompt describing the agent's role
+            skill_packs: List of skill pack names this agent can use
+        """
         self.name = name
         self.role_description = role_description
+        self.skill_packs = skill_packs or []
         self.llm = llm_service
         self.memory: List[Dict[str, str]] = []
 
@@ -32,6 +42,108 @@ class BaseAgent(ABC):
             Dict containing the decision, confidence, and reasoning.
         """
         pass
+
+    # =========================================================================
+    # Tool/Skill Methods
+    # =========================================================================
+    
+    def get_available_tools(self) -> List[Dict[str, Any]]:
+        """
+        Get all tools available to this agent based on its skill packs.
+        
+        Returns:
+            List of tool metadata dicts
+        """
+        from backend.skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        return registry.list_tools_for_agent(self.skill_packs)
+    
+    def match_tools_for_question(self, question: str) -> List[Dict[str, Any]]:
+        """
+        Match tools based on trigger keywords in the question.
+        
+        Args:
+            question: User's question or context
+            
+        Returns:
+            List of matched tool metadata dicts
+        """
+        from backend.skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        return registry.match_tools_by_keywords(question, self.skill_packs)
+    
+    def build_tools_prompt(self, question: str = None) -> str:
+        """
+        Build a prompt section describing available tools.
+        Dynamically generated - no hardcoding needed!
+        
+        Args:
+            question: Optional user question to highlight matching tools
+            
+        Returns:
+            Formatted string describing available tools
+        """
+        tools = self.get_available_tools()
+        if not tools:
+            return "无可用工具"
+        
+        # Find matching tools if question provided
+        matched_names = set()
+        if question:
+            matched = self.match_tools_for_question(question)
+            matched_names = {t['name'] for t in matched}
+        
+        lines = []
+        for tool in tools:
+            highlight = " ⭐推荐" if tool['name'] in matched_names else ""
+            lines.append(f"### {tool['name']}{highlight}")
+            lines.append(f"- 功能: {tool.get('description', 'N/A')}")
+            lines.append(f"- 触发词: {', '.join(tool.get('trigger_keywords', []))}")
+            lines.append(f"- 使用场景: {tool.get('use_cases', 'N/A')}")
+            
+            # Add parameter info
+            params = tool.get('parameters', {}).get('properties', {})
+            if params:
+                param_strs = [f"{k}({v.get('type', 'any')})" for k, v in params.items()]
+                lines.append(f"- 参数: {', '.join(param_strs)}")
+            lines.append("")
+        
+        return "\n".join(lines)
+    
+    def execute_tool(self, tool_name: str, log_data: Dict[str, Any] = None, **kwargs) -> Dict[str, Any]:
+        """
+        Execute a tool by name.
+        
+        Args:
+            tool_name: Name of the tool to execute
+            log_data: Well log data to pass to the tool
+            **kwargs: Additional parameters for the tool
+            
+        Returns:
+            Tool execution result
+        """
+        from backend.skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        
+        # Inject log_data if the tool expects it
+        if log_data is not None:
+            kwargs['log_data'] = log_data
+            
+        try:
+            result = registry.execute_tool(tool_name, **kwargs)
+            logger.info(f"Agent {self.name} executed tool {tool_name}")
+            return result
+        except Exception as e:
+            logger.error(f"Agent {self.name} failed to execute tool {tool_name}: {e}")
+            return {"error": str(e)}
+    
+    def has_tools(self) -> bool:
+        """Check if this agent has any tools available."""
+        return len(self.get_available_tools()) > 0
+
+    # =========================================================================
+    # LLM Interaction Methods
+    # =========================================================================
 
     def think(self, prompt: str, system_prompt_override: Optional[str] = None) -> str:
         """
@@ -50,7 +162,6 @@ class BaseAgent(ABC):
         system_prompt = system_prompt_override or self.role_description
         
         # Construct message history
-        # (In a real scenario, we might want to manage token limits here)
         messages = [{"role": "user", "content": prompt}]
         
         logger.info(f"Agent {self.name} is thinking...")
@@ -80,7 +191,7 @@ class BaseAgent(ABC):
 
     def parse_json_response(self, response_text: str) -> Dict[str, Any]:
         """
-         robustly parse JSON from LLM response.
+        Robustly parse JSON from LLM response.
         """
         try:
             # First, try to clean code blocks
@@ -99,6 +210,10 @@ class BaseAgent(ABC):
             # If all else fails
             logger.error(f"Failed to decode JSON from {self.name}: {response_text}")
             raise ValueError("LLM output format error")
+
+    # =========================================================================
+    # Memory Methods
+    # =========================================================================
 
     def add_to_memory(self, role: str, content: str):
         """Add a message to the agent's memory."""
