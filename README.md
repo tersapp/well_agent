@@ -13,6 +13,7 @@
 ## ✨ 特性亮点
 
 - 🤖 **多智能体协同** - LithologyAgent、ElectricalAgent、ArbitratorAgent 三位专家协同推理
+- 👆 **交互式深度分析** - Alt+拖拽进行层段选择，Alt+点击进行单点智能检测
 - 📊 **专业测井可视化** - ECharts 驱动的交互式多道测井曲线显示
 - 🎨 **岩性色标管理** - 自定义颜色映射、预设方案管理、语义化岩性标注
 - 🌙 **现代化暗色主题** - Claude Code 风格专业 IDE 界面
@@ -66,7 +67,10 @@ cd ..
 创建 `.env` 文件并配置 API 密钥：
 
 ```env
-ZHIPU_API_KEY=your_zhipu_api_key_here
+# DeepSeek API Configuration
+OPENCODE_API_KEY=your_deepseek_api_key_here
+OPENCODE_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
 ```
 
 ### 运行应用
@@ -134,14 +138,14 @@ well_agent/
 | 桌面框架 | Electron 28 |
 | 后端框架 | FastAPI |
 | AI 编排 | LangGraph |
-| LLM 服务 | 智谱 AI (GLM-4) |
+| LLM 服务 | DeepSeek V3 |
 
 ## 📝 使用说明
 
 1. **加载数据** - 点击侧边栏"加载文件"按钮，选择 LAS 格式测井文件
 2. **查看曲线** - 在曲线面板中查看测井数据，支持缩放、滚动
 3. **岩性配置** - 右键点击岩性道，选择"岩性色标设置"自定义颜色
-4. **运行分析** - 选择深度范围，点击"运行分析"启动智能体推理
+4. **运行分析** - 按住 `Alt` 键在图表中拖动选择深度，或点击单点，在弹窗中输入问题启动分析
 5. **保存会话** - 通过菜单保存当前工作状态
 
 ## 🗺️ 路线图
@@ -150,7 +154,8 @@ well_agent/
 - [x] 测井曲线可视化
 - [x] 岩性色标管理
 - [x] 会话保存/加载
-- [ ] 真实 LLM 工作流集成
+- [x] 真实 LLM 工作流集成 (DeepSeek)
+- [x] 交互式深度分析 (v1.1.0)
 - [ ] 分析报告生成
 - [ ] 知识库 (RAG) 集成
 - [ ] 多井批量处理优化
