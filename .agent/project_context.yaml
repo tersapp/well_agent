@@ -2,9 +2,9 @@
 # 每次分析时注入所有智能体的上下文
 
 project:
-  name: "西湖凹陷中深层超深层项目"
-  basin: "东海陆架盆地 - 西湖凹陷"
-  formation: "花港组 / 平湖组 (中深层-超深层)"
+  name: "某凹陷中深层超深层项目"
+  basin: "某盆地 - 某凹陷"
+  formation: "中深层-超深层"
 
 geology:
   target_lithology: "砂泥岩地层"
