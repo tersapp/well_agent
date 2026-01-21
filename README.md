@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/React-18.2-61DAFB.svg" alt="React">
   <img src="https://img.shields.io/badge/Electron-28.0-47848F.svg" alt="Electron">
   <img src="https://img.shields.io/badge/FastAPI-0.100+-009688.svg" alt="FastAPI">
-  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
+  <img src="https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg" alt="License">
 </p>
 
 基于多智能体架构的智能测井解释系统，通过岩性分析、电性分析和仲裁智能体的协同工作，实现油气层自动识别与解释。
@@ -22,39 +22,134 @@
 
 ## 📸 界面预览
 
-> 暂无截图，后续添加
+<p align="center">
+  <img src="prj_show/项目示例.png" alt="Well Agent 界面预览" width="100%">
+</p>
+
+## 🆕 新功能开发
+
+### v1.2.0 (开发中)
+
+- 🧠 **Agent Skills 架构** - 可扩展的技能系统，支持岩性分类、流体识别、储层评价等专业技能
+- 📈 **交会图分析工具** - 支持多种测井交会图（密度-中子、M-N 图版等）的自动生成与解释
+- 🎯 **曲线形态识别** - 基于算法的 GR 曲线形态分析，识别指状、箱形、钟形等特征
+- 📊 **分析日志系统** - 完整的 Agent 和 LLM 调用追踪，支持工作流优化
+
+### v1.1.0 (已发布)
+
+- 👆 **交互式深度分析** - Alt+拖拽进行层段选择，Alt+点击进行单点智能检测
+- 🎨 **岩性区间色标** - 支持基于值区间的岩性颜色映射，更精确的地层可视化
+- 💬 **流式对话** - LLM 响应实时流式输出，提升交互体验
+
+### 规划中
+
+- 📄 **分析报告生成** - 自动生成专业格式的测井解释报告
+- 🔍 **知识库 (RAG) 集成** - 接入油田知识库，增强解释准确性
+- ⚡ **多井批量处理** - 支持批量加载和分析多口井数据
 
 ## 🚀 快速开始
 
 ### 环境要求
 
-- **Python** 3.10 或更高版本
-- **Node.js** 18.0 或更高版本
-- **npm** 9.0 或更高版本
+在开始之前，请确保您的系统已安装以下软件：
+
+| 软件 | 最低版本 | 推荐版本 | 说明 |
+|------|----------|----------|------|
+| **Python** | 3.10 | 3.11+ | 后端运行环境 |
+| **Node.js** | 18.0 | 20 LTS | 前端构建工具 |
+| **npm** | 9.0 | 10+ | 包管理器（随 Node.js 安装） |
+| **MongoDB** | 6.0 | 7.0+ | 数据库服务 |
+| **Git** | 2.30 | 最新版 | 版本控制 |
+
+#### 检查环境版本
+
+```bash
+# 检查 Python 版本
+python --version    # 应显示 Python 3.10 或更高
+
+# 检查 Node.js 版本
+node --version      # 应显示 v18.0.0 或更高
+
+# 检查 npm 版本
+npm --version       # 应显示 9.0.0 或更高
+
+# 检查 MongoDB 版本（如已安装）
+mongod --version    # 应显示 db version v6.0 或更高
+```
+
+---
 
 ### 安装步骤
 
 #### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/well_agent.git
+git clone https://github.com/tersapp/well_agent.git
 cd well_agent
 ```
 
-#### 2. 安装后端依赖
+#### 2. 安装 MongoDB
 
+MongoDB 是本项目必需的数据库服务，用于存储会话和分析结果。
+
+**Windows:**
+1. 下载 [MongoDB Community Server](https://www.mongodb.com/try/download/community)
+2. 运行安装程序，选择 "Complete" 安装
+3. 勾选 "Install MongoDB as a Service" 以便自动启动
+4. 验证安装：`mongod --version`
+
+**macOS (使用 Homebrew):**
 ```bash
-# 创建虚拟环境 (推荐)
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或 Windows:
-.\venv\Scripts\activate
-
-# 安装依赖
-pip install -r requirements.txt
+brew tap mongodb/brew
+brew install mongodb-community
+brew services start mongodb-community
 ```
 
-#### 3. 安装前端依赖
+**Linux (Ubuntu/Debian):**
+```bash
+# 导入 MongoDB 公钥
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+
+# 添加仓库
+echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+
+# 安装
+sudo apt-get update
+sudo apt-get install -y mongodb-org
+sudo systemctl start mongod
+sudo systemctl enable mongod
+```
+
+#### 3. 安装后端依赖
+
+```bash
+# 创建 Python 虚拟环境（强烈推荐）
+python -m venv venv
+
+# 激活虚拟环境
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+# Windows CMD:
+.\venv\Scripts\activate.bat
+# Linux/macOS:
+source venv/bin/activate
+
+# 安装 Python 依赖
+pip install -r requirements.txt
+
+# 安装 FastAPI 和 Uvicorn（如未包含在 requirements.txt）
+pip install fastapi uvicorn[standard]
+```
+
+**主要后端依赖：**
+- `fastapi` - 高性能 Web 框架
+- `uvicorn` - ASGI 服务器
+- `langchain` + `langgraph` - AI 编排框架
+- `lasio` - LAS 文件解析
+- `motor` - MongoDB 异步驱动
+- `pandas` + `numpy` - 数据处理
+
+#### 4. 安装前端依赖
 
 ```bash
 cd frontend
@@ -62,38 +157,172 @@ npm install
 cd ..
 ```
 
-#### 4. 配置环境变量
+**主要前端依赖：**
+- `react` + `react-dom` - UI 框架
+- `antd` - Ant Design 组件库
+- `echarts` - 测井曲线图表
+- `zustand` - 状态管理
+- `electron` - 桌面应用框架
 
-创建 `.env` 文件并配置 API 密钥：
+#### 5. 配置环境变量
+
+在项目根目录创建 `.env` 文件：
 
 ```env
-# DeepSeek API Configuration
+# ====== LLM API 配置 ======
+# DeepSeek API（推荐）
 OPENCODE_API_KEY=your_deepseek_api_key_here
 OPENCODE_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-chat
+
+# 或使用其他兼容 OpenAI 格式的 API
+# OPENCODE_API_KEY=your_api_key
+# OPENCODE_BASE_URL=https://api.openai.com/v1
+# LLM_MODEL=gpt-4
+
+# ====== MongoDB 配置 ======
+# 默认本地连接，无需修改
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DATABASE=well_agent
+
+# ====== 可选配置 ======
+# 后端服务端口（默认 8000）
+# API_PORT=8000
+# 前端开发服务器端口（默认 5173）
+# FRONTEND_PORT=5173
 ```
+
+> ⚠️ **重要**: 请将 `your_deepseek_api_key_here` 替换为您的实际 API 密钥。您可以在 [DeepSeek 开放平台](https://platform.deepseek.com/) 获取 API 密钥。
+
+---
 
 ### 运行应用
 
-#### 启动后端服务
+#### 方式一：开发模式（推荐）
+
+需要打开 **两个终端窗口**，分别启动后端和前端服务：
+
+**终端 1 - 启动后端服务：**
 
 ```bash
+# 确保在项目根目录
+cd well_agent
+
 # Windows PowerShell
 $env:PYTHONPATH="."
 python -m uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
 
-# Linux/Mac
+# Linux/macOS
 PYTHONPATH=. uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-#### 启动前端开发服务器
+后端启动成功后，您将看到：
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [xxxxx]
+```
+
+**终端 2 - 启动前端服务：**
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-访问 http://localhost:5173 查看应用。
+前端启动成功后，您将看到：
+```
+  VITE v5.x.x  ready in xxx ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.x.x:5173/
+```
+
+#### 方式二：Electron 桌面应用模式
+
+```bash
+cd frontend
+npm run electron-dev
+```
+
+这将同时启动前端开发服务器和 Electron 桌面应用。
+
+---
+
+### 访问应用
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| **Web 前端** | http://localhost:5173 | 在浏览器中访问 |
+| **后端 API** | http://localhost:8000 | REST API 服务 |
+| **API 文档** | http://localhost:8000/docs | Swagger UI 交互式文档 |
+| **ReDoc 文档** | http://localhost:8000/redoc | ReDoc 格式 API 文档 |
+
+---
+
+### 常见问题排查
+
+#### ❌ MongoDB 连接失败
+
+**错误信息：** `ServerSelectionTimeoutError: localhost:27017`
+
+**解决方案：**
+1. 确认 MongoDB 服务正在运行：
+   ```bash
+   # Windows
+   net start MongoDB
+   
+   # Linux
+   sudo systemctl status mongod
+   ```
+2. 检查 `.env` 中的 `MONGODB_URI` 配置
+
+#### ❌ LLM API 调用失败
+
+**错误信息：** `401 Unauthorized` 或 `API key invalid`
+
+**解决方案：**
+1. 确认 `.env` 中的 `OPENCODE_API_KEY` 正确
+2. 检查 API 密钥是否有效且有余额
+3. 确认 `OPENCODE_BASE_URL` 与您的 API 提供商匹配
+
+#### ❌ 前端页面空白
+
+**可能原因：** 后端服务未启动
+
+**解决方案：**
+1. 确认后端服务正在运行（端口 8000）
+2. 检查浏览器控制台是否有 CORS 错误
+3. 刷新页面或清除浏览器缓存
+
+#### ❌ 模块导入错误
+
+**错误信息：** `ModuleNotFoundError: No module named 'xxx'`
+
+**解决方案：**
+```bash
+# 确保激活了虚拟环境
+.\venv\Scripts\Activate.ps1  # Windows
+source venv/bin/activate      # Linux/macOS
+
+# 重新安装依赖
+pip install -r requirements.txt
+```
+
+#### ❌ 端口被占用
+
+**错误信息：** `Address already in use`
+
+**解决方案：**
+```bash
+# 查找占用端口的进程
+# Windows
+netstat -ano | findstr :8000
+
+# Linux/macOS
+lsof -i :8000
+
+# 终止进程或更换端口
+```
 
 ## 📁 项目结构
 
@@ -123,6 +352,8 @@ well_agent/
 │   │   └── App.tsx             # 主应用
 │   ├── electron/               # Electron 配置
 │   └── package.json
+├── .agent/                     # Agent 配置
+│   └── skills/                 # 专业技能定义
 ├── test_data/                  # 测试数据
 ├── requirements.txt            # Python 依赖
 └── README.md
@@ -139,6 +370,7 @@ well_agent/
 | 后端框架 | FastAPI |
 | AI 编排 | LangGraph |
 | LLM 服务 | DeepSeek V3 |
+| 数据存储 | MongoDB |
 
 ## 📝 使用说明
 
@@ -156,17 +388,64 @@ well_agent/
 - [x] 会话保存/加载
 - [x] 真实 LLM 工作流集成 (DeepSeek)
 - [x] 交互式深度分析 (v1.1.0)
+- [x] Agent Skills 架构 (v1.2.0)
 - [ ] 分析报告生成
 - [ ] 知识库 (RAG) 集成
 - [ ] 多井批量处理优化
 
-## 📄 许可证
+## 📖 引用
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+如果您在学术论文或研究项目中使用了本项目，请按以下格式引用：
+
+```bibtex
+@software{well_agent,
+  title = {Well Agent: 测井解释多智能体系统},
+  author = {Well Agent Contributors},
+  year = {2025},
+  url = {https://github.com/tersapp/well_agent},
+  note = {基于多智能体架构的智能测井解释系统}
+}
+
+或使用文本格式：
+
+> Well Agent Contributors. (2025). Well Agent: 测井解释多智能体系统 [Computer software]. https://github.com/tersapp/well_agent
+
+## ⚠️ 许可证
+
+**版权所有 © 2025 Well Agent Contributors**
+
+本项目采用 **CC BY-NC 4.0 (署名-非商业性使用 4.0 国际)** 许可证。
+
+### 您可以自由地：
+
+- **共享** — 在任何媒介以任何形式复制、发行本作品
+- **演绎** — 修改、转换或以本作品为基础进行创作
+
+### 惟须遵守下列条件：
+
+- **署名** — 您必须给出适当的署名，提供指向本许可证的链接，同时标明是否对原始作品作了修改
+- **非商业性使用** — 您不得将本作品用于商业目的
+
+### 🚫 禁止商业使用
+
+本项目 **严禁用于任何商业目的**，包括但不限于：
+
+- 商业软件产品开发
+- 付费服务或 SaaS 平台
+- 企业内部商业项目
+- 任何以盈利为目的的使用
+
+如需商业使用授权，请联系项目维护者。
+
+查看完整许可证：[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/deed.zh)
 
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
+
+在贡献之前，请注意：
+1. 您提交的代码将遵循本项目的许可证条款
+2. 请确保您有权贡献所提交的代码
 
 ---
 
