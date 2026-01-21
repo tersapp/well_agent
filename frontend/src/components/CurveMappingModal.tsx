@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { CheckCircleOutlined, StarOutlined, QuestionCircleOutlined, SearchOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import React, { useState, useEffect } from 'react';
+import { CheckCircleOutlined, StarOutlined, QuestionCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 
 interface StandardType {
     description: string;
@@ -32,7 +32,6 @@ const CurveMappingModal: React.FC<CurveMappingModalProps> = ({
     isLoadingSuggestions = false,
 }) => {
     const [userMappings, setUserMappings] = useState<Record<string, string>>({});
-    const [searchTerm, setSearchTerm] = useState('');
     const [showMatched, setShowMatched] = useState(false);
 
     // Initialize mappings when modal opens
@@ -49,16 +48,7 @@ const CurveMappingModal: React.FC<CurveMappingModalProps> = ({
         }
     }, [visible, curveMapping, llmSuggestions]);
 
-    // Filter standard types by search
-    const filteredTypes = useMemo(() => {
-        if (!searchTerm) return Object.entries(standardTypes);
-        const term = searchTerm.toLowerCase();
-        return Object.entries(standardTypes).filter(
-            ([key, value]) =>
-                key.toLowerCase().includes(term) ||
-                value.description.toLowerCase().includes(term)
-        );
-    }, [standardTypes, searchTerm]);
+    // Common types for quick selection
 
     // Common types for quick selection
     const commonTypes = ['GR', 'RHOB', 'NPHI', 'RES_DEEP', 'DT', 'SP', 'CAL'];
@@ -85,7 +75,7 @@ const CurveMappingModal: React.FC<CurveMappingModalProps> = ({
     if (!visible || !curveMapping) return null;
 
     const unmatchedWithLLM = curveMapping.unmatched.filter(n => llmSuggestions[n]);
-    const unmatchedNoSuggestion = curveMapping.unmatched.filter(n => !llmSuggestions[n]);
+    // const unmatchedNoSuggestion = curveMapping.unmatched.filter(n => !llmSuggestions[n]);
     const matchedEntries = Object.entries(curveMapping.matched);
 
     const hasUnconfirmed = curveMapping.unmatched.some(name => !userMappings[name]);

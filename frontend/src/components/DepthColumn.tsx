@@ -41,7 +41,7 @@ const DepthColumn: React.FC<DepthColumnProps> = ({
 
     // Handle zoom events and emit to parent
     const onEvents = useMemo(() => ({
-        datazoom: (params: any) => {
+        datazoom: (_params: any) => {
             if (isProgrammaticUpdate.current) return;
             if (!onViewDepthChange || !chartRef.current) return;
 

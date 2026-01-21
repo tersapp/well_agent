@@ -70,11 +70,11 @@ const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
     };
 
     const handleMouseEnter = (e: React.MouseEvent) => {
-        e.currentTarget.style.backgroundColor = '#3f3f46';
+        (e.currentTarget as HTMLElement).style.backgroundColor = '#3f3f46';
     };
 
     const handleMouseLeave = (e: React.MouseEvent) => {
-        e.currentTarget.style.backgroundColor = 'transparent';
+        (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
     };
 
     const disabledStyle = { color: '#52525b', cursor: 'not-allowed' };

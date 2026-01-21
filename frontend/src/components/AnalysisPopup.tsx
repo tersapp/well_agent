@@ -28,7 +28,7 @@ const AnalysisPopup: React.FC<AnalysisPopupProps> = ({
             // Basic logic: prefer bottom-right of cursor, flip if too close to edge
             const width = 300;
             const height = 200;
-            const padding = 10;
+            // padding removed
 
             let top = y + 10;
             let left = x + 10;

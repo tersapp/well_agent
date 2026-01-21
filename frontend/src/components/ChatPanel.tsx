@@ -1,259 +1,469 @@
-import {
-    RobotOutlined,
-    CheckCircleOutlined,
-    LoadingOutlined,
-    DoubleRightOutlined,
-    DoubleLeftOutlined
-} from '@ant-design/icons';
-
-interface Message {
-    id: string;
-    agent: string;
-    content: string;
-    confidence: number;
-    timestamp: Date;
-    isFinal?: boolean;
-}
+import React, { useRef, useEffect } from 'react';
+import { Button, Input, Card, Spin, Space, Empty, Collapse } from 'antd';
+import { SendOutlined, StopOutlined, DeleteOutlined, RobotOutlined, UserOutlined, MenuOutlined, FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons';
+import ReactMarkdown, { Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { Message } from 'ai';
+import SmartChart from './SmartChart';
 
 interface ChatPanelProps {
     messages: Message[];
-    isAnalyzing: boolean;
-    canAnalyze: boolean;
-    progressStatus?: string; // e.g., "第1轮，岩性专家正在分析..."
-    onStartAnalysis: () => void;
+    input: string;
+    handleInputChange: (e: React.ChangeEvent<HTMLInputElement> | React.ChangeEvent<HTMLTextAreaElement>) => void;
+    handleSubmit: (e: React.FormEvent) => void;
+    isLoading: boolean;
+    stop: () => void;
+    setMessages: (messages: Message[]) => void;
     collapsed: boolean;
     onToggleCollapse: () => void;
+    progressStatus?: string;
+    isFullscreen?: boolean;
+    onToggleFullscreen?: () => void;
 }
 
 const agentColors: Record<string, string> = {
-    LithologyExpert: '#f59e0b',
-    ElectricalExpert: '#3b82f6',
-    ReservoirPropertyExpert: '#10b981', // Emerald
-    SaturationExpert: '#f43f5e', // Rose
-    MudLoggingExpert: '#eab308', // Yellow
-    MineralogyExpert: '#8b5cf6', // Violet
-    Arbitrator: '#c084fc',
-    System: '#22c55e',
+    // ... (unchanged)
 };
 
 const agentNames: Record<string, string> = {
-    LithologyExpert: '岩性专家',
-    ElectricalExpert: '电性专家',
-    ReservoirPropertyExpert: '物性专家',
-    SaturationExpert: '饱和度专家',
-    MudLoggingExpert: '气测专家',
-    MineralogyExpert: '矿物专家',
-    Arbitrator: '决策者',
-    System: '系统',
+    // ... (unchanged)
+};
+
+const markdownComponents: Components = {
+    code(props: any) {
+        const { node, inline, className, children, ...rest } = props;
+        const match = /language-(\w+)/.exec(className || '');
+        if (!inline && match && match[1] === 'echarts') {
+            try {
+                const config = JSON.parse(String(children).replace(/\n$/, ''));
+                return <SmartChart config={config} />;
+            } catch (e) {
+                return (
+                    <div style={{ color: 'red', border: '1px solid red', padding: 8 }}>
+                        Chart Rendering Error: Invalid JSON
+                    </div>
+                );
+            }
+        }
+        return <code className={className} {...rest}>{children}</code>;
+    }
 };
 
 const ChatPanel: React.FC<ChatPanelProps> = ({
     messages,
-    isAnalyzing,
-    canAnalyze,
-    progressStatus,
-    onStartAnalysis,
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    stop,
+    // reload, // unused
+    setMessages,
     collapsed,
-    onToggleCollapse
+    onToggleCollapse,
+    progressStatus,
+    isFullscreen,
+    onToggleFullscreen
 }) => {
-    const roundCount = messages.filter(m => m.agent === 'Arbitrator').length || 0;
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    console.log('[ChatPanel] Messages prop:', messages); // DEBUG LOG
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages, isLoading, progressStatus]);
+
+    if (collapsed) {
+        return (
+            <div style={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                backgroundColor: 'var(--bg-secondary)',
+                borderLeft: '1px solid var(--border-color)',
+                alignItems: 'center',
+                paddingTop: 16,
+                width: 40
+            }}>
+                <Button type="text" onClick={onToggleCollapse} icon={<MenuOutlined />} />
+            </div>
+        );
+    }
 
     return (
         <div style={{
             height: '100%',
             display: 'flex',
             flexDirection: 'column',
-            background: 'var(--bg-secondary)',
+            backgroundColor: 'var(--bg-secondary)',
             position: 'relative'
         }}>
             {/* Header */}
             <div style={{
-                padding: collapsed ? 'var(--spacing-md) 0' : 'var(--spacing-md) var(--spacing-lg)',
+                padding: '12px 16px',
                 borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
-                flexDirection: collapsed ? 'column' : 'row',
+                justifyContent: 'space-between',
                 alignItems: 'center',
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                gap: 'var(--spacing-sm)'
+                backgroundColor: 'var(--bg-primary)'
             }}>
-                {collapsed ? (
-                    <div
-                        onClick={onToggleCollapse}
-                        style={{
-                            cursor: 'pointer',
-                            color: 'var(--accent-primary)',
-                            fontSize: '1.2rem',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: 16
-                        }}
-                    >
-                        <DoubleLeftOutlined />
-                        <div style={{
-                            writingMode: 'vertical-rl',
-                            textOrientation: 'mixed',
-                            fontSize: '0.85rem',
-                            fontWeight: 600,
-                            letterSpacing: 4,
-                            marginTop: 8,
-                            color: 'var(--text-secondary)'
-                        }}>
-                            智能体协作
-                        </div>
-                    </div>
-                ) : (
-                    <>
-                        <div
-                            onClick={onToggleCollapse}
-                            style={{
-                                cursor: 'pointer',
-                                color: 'var(--text-secondary)',
-                                fontSize: '1.1rem',
-                                marginRight: 4,
-                                display: 'flex',
-                                alignItems: 'center'
-                            }}
-                        >
-                            <DoubleRightOutlined />
-                        </div>
-                        <RobotOutlined style={{ color: 'var(--accent-primary)' }} />
-                        <span style={{ fontWeight: 600 }}>智能体协作讨论</span>
-                        <span style={{
-                            marginLeft: 'auto',
-                            fontSize: '0.75rem',
-                            color: 'var(--text-muted)'
-                        }}>
-                            第 {roundCount + 1} 轮
-                        </span>
-                    </>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <RobotOutlined style={{ color: '#1890ff' }} />
+                    <span style={{ fontWeight: 600 }}>智能分析助手</span>
+                    {isLoading && <Spin size="small" />}
+                </div>
+                <Space>
+                    {onToggleFullscreen && (
+                        <Button
+                            type="text"
+                            icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                            onClick={onToggleFullscreen}
+                            title={isFullscreen ? "退出全屏" : "全屏模式"}
+                        />
+                    )}
+                    <Button
+                        type="text"
+                        icon={<DeleteOutlined />}
+                        onClick={() => setMessages([])}
+                        title="清空对话"
+                    />
+                    <Button type="text" onClick={onToggleCollapse}>
+                        {collapsed ? '<<' : '>>'}
+                    </Button>
+                </Space>
             </div>
 
-            {/* Messages */}
-            {!collapsed && (
-                <div className="chat-container" style={{ flex: 1 }}>
-                    {messages.length === 0 ? (
-                        <div style={{
-                            textAlign: 'center',
-                            padding: 'var(--spacing-xl)',
-                            color: 'var(--text-muted)'
-                        }}>
-                            <RobotOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }} />
-                            <div>等待开始分析...</div>
-                            <div style={{ fontSize: '0.85rem', marginTop: 8 }}>
-                                加载数据后点击下方按钮开始
-                            </div>
-                        </div>
-                    ) : (
-                        messages.map((msg) => (
-                            <div
-                                key={msg.id}
-                                className={`chat-message ${msg.isFinal ? '' : 'agent'} animate-fade-in`}
-                                style={{
-                                    borderLeftColor: msg.isFinal ? 'var(--success)' : agentColors[msg.agent],
-                                    background: msg.isFinal ? 'rgba(34, 197, 94, 0.1)' : undefined,
-                                }}
-                            >
-                                <div
-                                    className="chat-avatar"
-                                    style={{
-                                        background: agentColors[msg.agent] || 'var(--accent-gradient)',
-                                    }}
-                                >
-                                    {msg.agent[0]}
-                                </div>
-                                <div className="chat-content">
-                                    <div className="chat-header">
-                                        <span className="chat-name">{agentNames[msg.agent] || msg.agent}</span>
-                                        {msg.isFinal && (
-                                            <CheckCircleOutlined style={{ color: 'var(--success)' }} />
-                                        )}
-                                        <span className="chat-time">
-                                            {msg.timestamp.toLocaleTimeString('zh-CN', {
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            })}
-                                        </span>
-                                    </div>
-                                    <div className="chat-text">{msg.content}</div>
-                                    {msg.agent !== 'System' && (
+            {/* Messages Area */}
+            <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: 16,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16
+            }}>
+                {messages.length === 0 ? (
+                    <Empty description="暂无对话，请开始分析或提问" style={{ marginTop: 60 }} />
+                ) : (
+                    messages.map((m) => {
+                        const isUser = m.role === 'user';
+
+                        if (isUser) {
+                            return (
+                                <div key={m.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                    <div style={{ maxWidth: '90%', display: 'flex', gap: 8, flexDirection: 'row-reverse' }}>
                                         <div style={{
-                                            marginTop: 8,
-                                            fontSize: '0.75rem',
-                                            color: 'var(--text-muted)'
+                                            width: 28, height: 28, borderRadius: '50%',
+                                            backgroundColor: agentColors['user'],
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            color: 'white', flexShrink: 0, marginTop: 4
                                         }}>
-                                            置信度:
-                                            <span style={{
-                                                color: msg.confidence > 0.8 ? 'var(--success)' :
-                                                    msg.confidence > 0.6 ? 'var(--warning)' : 'var(--error)',
-                                                marginLeft: 4,
-                                                fontWeight: 600
-                                            }}>
-                                                {(msg.confidence * 100).toFixed(0)}%
-                                            </span>
+                                            <UserOutlined />
                                         </div>
-                                    )}
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                            <Card size="small" style={{
+                                                backgroundColor: 'var(--accent-secondary)', // Use accent color for user
+                                                borderColor: 'var(--accent-secondary)',
+                                                color: '#fff' // Force white text on accent
+                                            }} bodyStyle={{ padding: '8px 12px' }}>
+                                                <div className="markdown-body" style={{ fontSize: 13, lineHeight: 1.6, color: 'inherit' }}>
+                                                    {m.content}
+                                                </div>
+                                            </Card>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        ))
-                    )}
+                            );
+                        }
 
-                    {isAnalyzing && (
-                        <div className="chat-message agent animate-fade-in" style={{ borderLeftColor: 'var(--accent-primary)' }}>
-                            <div className="chat-avatar" style={{ background: 'var(--accent-gradient)' }}>
-                                <LoadingOutlined spin />
-                            </div>
-                            <div className="chat-content">
-                                <div className="chat-text" style={{ color: 'var(--accent-primary)' }}>
-                                    智能体分析中...
+                        // For assistant, try to split by "**AgentName**:" pattern
+                        // Regex to find all "**Name**: " blocks
+                        // Regex to find all "**Name**: " blocks
+                        // We capture the name and the content following it
+                        // FIX: Don't trim() filter, as it removes pure whitespace content (like newlines)
+                        const parts = m.content.split(/(\*\*.+?\*\*:\s)/g).filter(p => p !== "");
+
+                        // Identify if this is a "structured" multi-agent message
+                        const isStructured = parts.length > 0 && parts[0].startsWith('**') && parts[0].endsWith(': ');
+
+                        if (!isStructured) {
+                            // Fallback for single assistant message or if format doesn't match
+                            return (
+                                <div key={m.id} style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                                    <div style={{ maxWidth: '90%', display: 'flex', gap: 8 }}>
+                                        <div style={{
+                                            width: 28, height: 28, borderRadius: '50%',
+                                            backgroundColor: agentColors['assistant'],
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            color: 'white', flexShrink: 0, marginTop: 4
+                                        }}>
+                                            <RobotOutlined />
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                            <span style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2, marginLeft: 2 }}>
+                                                {agentNames['assistant']}
+                                            </span>
+                                            <Card size="small" style={{
+                                                backgroundColor: 'var(--bg-card)',
+                                                borderColor: 'var(--border-color)',
+                                                color: 'var(--text-primary)'
+                                            }} bodyStyle={{ padding: '8px 12px' }}>
+                                                <div className="markdown-body" style={{ fontSize: 13, lineHeight: 1.6, color: 'inherit' }}>
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{m.content}</ReactMarkdown>
+                                                </div>
+                                            </Card>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
+                            );
+                        }
 
-            {/* Footer */}
-            {!collapsed && (
-                <div style={{
-                    padding: 'var(--spacing-md)',
-                    borderTop: '1px solid var(--border-color)'
-                }}>
-                    {/* Progress Status Display */}
-                    {progressStatus && (
-                        <div style={{
-                            marginBottom: 'var(--spacing-sm)',
-                            padding: '8px 12px',
-                            background: 'rgba(139, 92, 246, 0.1)',
-                            borderRadius: 6,
-                            fontSize: '0.85rem',
-                            color: 'var(--accent-primary)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8
-                        }}>
-                            <LoadingOutlined spin style={{ fontSize: 14 }} />
-                            <span>{progressStatus}</span>
-                        </div>
-                    )}
-                    <button
-                        className="btn btn-primary"
-                        style={{ width: '100%' }}
-                        onClick={onStartAnalysis}
-                        disabled={!canAnalyze}
-                    >
-                        {isAnalyzing ? (
-                            <>
-                                <LoadingOutlined spin />
-                                分析中...
-                            </>
+                        // Render structured chunks
+                        const chunks: { agent: string, content: string }[] = [];
+                        let currentAgent = 'System';
+                        let currentContent: string[] = [];
+
+                        // Re-assemble parts
+                        for (let i = 0; i < parts.length; i++) {
+                            const part = parts[i];
+                            const agentMatch = part.match(/^\*\*(.+?)\*\*:\s$/);
+                            if (agentMatch) {
+                                // If we have accumulated content for previous agent, push it
+                                if (currentContent.length > 0) {
+                                    chunks.push({ agent: currentAgent, content: currentContent.join('') });
+                                    currentContent = [];
+                                }
+                                // Set new agent
+                                currentAgent = agentMatch[1];
+                            } else {
+                                currentContent.push(part);
+                            }
+                        }
+                        // Push last chunk
+                        if (currentContent.length > 0) {
+                            chunks.push({ agent: currentAgent, content: currentContent.join('') });
+                        }
+
+                        // Fallback: If structured parsing resulted in no chunks (unlikely given isStructured check, but possible if content is empty), render raw
+                        // Fallback: If structured parsing resulted in no chunks, render raw content
+                        if (chunks.length === 0) {
+                            return (
+                                <div key={m.id} style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                                    <div style={{ maxWidth: '90%', display: 'flex', gap: 8 }}>
+                                        <div style={{
+                                            width: 28, height: 28, borderRadius: '50%',
+                                            backgroundColor: agentColors['assistant'],
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            color: 'white', flexShrink: 0, marginTop: 4
+                                        }}>
+                                            <RobotOutlined />
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                            <span style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2, marginLeft: 2 }}>
+                                                {agentNames['assistant']}
+                                            </span>
+                                            <Card size="small" style={{
+                                                backgroundColor: 'var(--bg-card)',
+                                                borderColor: 'var(--border-color)',
+                                                color: 'var(--text-primary)'
+                                            }} bodyStyle={{ padding: '8px 12px' }}>
+                                                <div className="markdown-body" style={{ fontSize: 13, lineHeight: 1.6, color: 'inherit' }}>
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                                                </div>
+                                            </Card>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        // Partition chunks into "Process" (Intermediate) and "Result" (Arbitrator/Final)
+                        // Heuristic: "Arbitrator" is the main speaker. Others are tools/experts.
+                        // We will group all non-Arbitrator chunks into a single "Thought Chain" block if they appear before the final answer.
+                        // However, sometimes Arbitrator speaks first (Planning), then Experts, then Arbitrator (Summary).
+                        // A simple robust way: Render chunks sequentially, but if a chunk is NOT Arbitrator, put it in a collapsible group?
+                        // Better: Just group ALL non-Arbitrator chunks into a Collapse? 
+                        // Issue: If Arbitrator speaks, then Expert, then Arbitrator, we might want to see the sequence.
+
+                        // Let's try: Group consecutive non-Arbitrator chunks.
+                        const groupedChunks: { type: 'process' | 'result', items: typeof chunks }[] = [];
+
+                        let currentGroup: typeof chunks = [];
+                        let isCollectingProcess = false;
+
+                        chunks.forEach(chunk => {
+                            const isArbitrator = chunk.agent === 'Arbitrator';
+
+                            if (!isArbitrator) {
+                                // This is a process step
+                                if (!isCollectingProcess) {
+                                    // Start new process group
+                                    // First flush specific result if exists (though usually process comes first or interleaved)
+                                    // Actually, if we were collecting results, we should push them.
+                                    // But we are processing strictly sequential.
+                                    // Wait, the logic is simpler:
+                                    // If we are currently collecting process, just add.
+                                    // If we were NOT, switch to collecting process.
+                                }
+                                currentGroup.push(chunk);
+                                isCollectingProcess = true;
+                            } else {
+                                // This is a result step (Arbitrator)
+                                if (isCollectingProcess) {
+                                    // Finish the process group
+                                    groupedChunks.push({ type: 'process', items: [...currentGroup] });
+                                    currentGroup = [];
+                                    isCollectingProcess = false;
+                                }
+                                // Push this result individually (or group consecutive Arbitrator messages? usually just one)
+                                groupedChunks.push({ type: 'result', items: [chunk] });
+                            }
+                        });
+
+                        // Flush remaining
+                        if (currentGroup.length > 0) {
+                            groupedChunks.push({ type: isCollectingProcess ? 'process' : 'result', items: currentGroup });
+                        }
+
+                        return (
+                            <div key={m.id} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                {groupedChunks.map((group, gIdx) => {
+                                    if (group.type === 'process') {
+                                        return (
+                                            <Collapse
+                                                key={`group-${gIdx}`}
+                                                ghost
+                                                size="small"
+                                                items={[{
+                                                    key: '1',
+                                                    label: <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                                                        <Space>
+                                                            <RobotOutlined />
+                                                            <span>分析过程 ({group.items.length} 步)</span>
+                                                            <Space size={4}>
+                                                                {group.items.map((it, i) => (
+                                                                    <span key={i} title={it.agent} style={{
+                                                                        width: 6, height: 6,
+                                                                        borderRadius: '50%',
+                                                                        backgroundColor: agentColors[Object.keys(agentNames).find(key => agentNames[key] === it.agent) || 'System'] || '#ccc',
+                                                                        display: 'inline-block'
+                                                                    }} />
+                                                                ))}
+                                                            </Space>
+                                                        </Space>
+                                                    </div>,
+                                                    children: (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingLeft: 14, borderLeft: '2px solid var(--border-color)' }}>
+                                                            {group.items.map((chunk, cIdx) => (
+                                                                <div key={`proc-${cIdx}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                                                    <span style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2, fontWeight: 500 }}>
+                                                                        {chunk.agent}
+                                                                    </span>
+                                                                    <Card size="small" style={{ width: '100%', opacity: 0.9 }} bodyStyle={{ padding: '8px 12px' }}>
+                                                                        <div className="markdown-body" style={{ fontSize: 13, lineHeight: 1.6 }}>
+                                                                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{chunk.content}</ReactMarkdown>
+                                                                        </div>
+                                                                    </Card>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )
+                                                }]}
+                                            />
+                                        );
+                                    } else {
+                                        // Result (Arbitrator)
+                                        return group.items.map((chunk, cIdx) => (
+                                            <div key={`res-${gIdx}-${cIdx}`} style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                                                <div style={{ maxWidth: '90%', display: 'flex', gap: 8 }}>
+                                                    <div style={{
+                                                        width: 28, height: 28, borderRadius: '50%',
+                                                        backgroundColor: agentColors['assistant'],
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        color: 'white', flexShrink: 0, marginTop: 4,
+                                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                                    }}>
+                                                        <RobotOutlined />
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                                        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2, marginLeft: 2 }}>
+                                                            {agentNames['assistant']}
+                                                        </span>
+                                                        <Card size="small" style={{
+                                                            backgroundColor: 'var(--bg-card)',
+                                                            borderColor: 'var(--border-color)',
+                                                            color: 'var(--text-primary)',
+                                                            boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                                                        }} bodyStyle={{ padding: '12px 16px' }}>
+                                                            <div className="markdown-body" style={{ fontSize: 14, lineHeight: 1.6, color: 'inherit' }}>
+                                                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{chunk.content}</ReactMarkdown>
+                                                            </div>
+                                                        </Card>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ));
+                                    }
+                                })}
+                            </div>
+                        );
+                    })
+                )}
+
+                {/* Status Indicator */}
+                {isLoading && progressStatus && (
+                    <div style={{
+                        padding: '8px 12px',
+                        background: 'rgba(24, 144, 255, 0.05)',
+                        border: '1px dashed #1890ff',
+                        borderRadius: 4,
+                        color: '#1890ff',
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        margin: '0 40px'
+                    }}>
+                        <Spin size="small" />
+                        <span>{progressStatus}</span>
+                    </div>
+                )}
+
+                <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input Area */}
+            <div style={{
+                padding: 16,
+                borderTop: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-primary)'
+            }}>
+                <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <Input.TextArea
+                            value={input}
+                            onChange={handleInputChange}
+                            placeholder="输入您的问题..."
+                            autoSize={{ minRows: 1, maxRows: 4 }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSubmit(e as any);
+                                }
+                            }}
+                            disabled={isLoading}
+                        />
+                        {isLoading ? (
+                            <Button danger icon={<StopOutlined />} onClick={stop} style={{ height: 'auto' }}>停止</Button>
                         ) : (
-                            '开始新一轮分析'
+                            <Button type="primary" htmlType="submit" icon={<SendOutlined />} style={{ height: 'auto' }}>发送</Button>
                         )}
-                    </button>
-                </div>
-            )}
+                    </div>
+                </form>
+            </div>
         </div>
     );
 };

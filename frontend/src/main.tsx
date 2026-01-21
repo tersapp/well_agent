@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ConfigProvider, theme } from 'antd';
 import App from './App';
+import { SelectionProvider } from './context/SelectionContext';
 import './styles/global.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -26,7 +27,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 }
             }}
         >
-            <App />
+            <SelectionProvider>
+                <App />
+            </SelectionProvider>
         </ConfigProvider>
     </React.StrictMode>
 );

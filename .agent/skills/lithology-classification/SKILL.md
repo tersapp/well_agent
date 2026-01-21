@@ -59,3 +59,12 @@ Vsh = (GR - GRmin) / (GRmax - GRmin)
 Vsh = 0.33 × (2^(2×IGR) - 1)
 IGR = (GR - GRmin) / (GRmax - GRmin)
 ```
+
+## 五、可用工具参考
+
+### analyze_crossplot
+生成交会图以可视化岩性分布。
+- `x_expression`: X轴曲线 (如 "NPHI")
+- `y_expression`: Y轴曲线 (如 "RHOB")
+- `color_expression`: 颜色轴 (默认 "GR")
+- `overlay_type`: (可选) 叠加标准图版类型。如果设为 "ND"，在图上叠加砂岩、灰岩、白云岩骨架线。

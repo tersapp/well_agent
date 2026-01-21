@@ -57,6 +57,11 @@ export interface AnalysisResult {
 }
 
 export const api = {
+    async getSessionData(sessionId: string): Promise<ParseResult> {
+        const response = await apiClient.get<ParseResult>(`/api/session/${sessionId}/data`);
+        return response.data;
+    },
+
     async parseLasFile(file: File): Promise<ParseResult> {
         const formData = new FormData();
         formData.append('file', file);
@@ -153,9 +158,10 @@ export const api = {
         focusNote: string | undefined,
         sessionId: string,
         onMessage: (data: StreamEvent) => void,
-        onError: (error: Event) => void,
-        onComplete: () => void
-    ): EventSource {
+        onError: (error: any) => void,
+        onComplete: () => void,
+        conversationId?: string
+    ): { close: () => void } {
         const params = new URLSearchParams({
             session_id: sessionId,
         });
@@ -174,11 +180,23 @@ export const api = {
                 start_depth: startDepth,
                 end_depth: endDepth,
                 focus_note: focusNote,
+                conversation_id: conversationId,
             }),
         })
             .then(async (response) => {
-                if (!response.ok || !response.body) {
-                    throw new Error(`HTTP error ${response.status}`);
+                if (!response.ok) {
+                    let errorInfo = { status: response.status, message: response.statusText, detail: null };
+                    try {
+                        const errorBody = await response.json();
+                        errorInfo.detail = errorBody.detail;
+                    } catch (e) {
+                        // ignore if no json body
+                    }
+                    throw errorInfo;
+                }
+
+                if (!response.body) {
+                    throw new Error(`HTTP error ${response.status}: No body`);
                 }
 
                 const reader = response.body.getReader();
@@ -212,8 +230,8 @@ export const api = {
                 onError(error);
             });
 
-        // Return a dummy EventSource-like object for compatibility
-        return { close: () => { } } as EventSource;
+        // Return a dummy object for compatibility
+        return { close: () => { } };
     },
 };
 
@@ -227,7 +245,7 @@ export interface AgentInfo {
 
 // Stream event types
 export interface StreamEvent {
-    type: 'agent_message' | 'final_decision' | 'done' | 'error';
+    type: 'agent_message' | 'final_decision' | 'done' | 'error' | 'context';
     agent?: string;
     content?: string;
     confidence?: number;
@@ -235,6 +253,8 @@ export interface StreamEvent {
     decision?: string;
     reasoning?: string;
     message?: string;
+    conversation_id?: string;
+    is_followup?: boolean;
 }
 
 // Conversation interfaces

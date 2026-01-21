@@ -1,34 +1,65 @@
 tools:
   - name: analyze_crossplot
     entry_point: crossplot:analyze_crossplot
-    description: 中子-密度交会分析，识别岩性和矿物骨架（砂岩/石灰岩/白云岩/泥岩）
+    description: 高级交会图分析，支持自定义X/Y轴表达式（如速度转换）、数据过滤和颜色映射。输出 ECharts 兼容数据。
     trigger_keywords:
       - 交会
       - crossplot
-      - 中子密度
-      - 分离
+      - 散点图
+      - Vp vs Vs
+      - 速度交会
+      - 属性分析
       - 图版
-      - 骨架
-      - 密度中子
-      - 交会特征
-      - 交会图
-    use_cases: 当用户询问交会图特征、中子密度分离、岩性识别、或矿物骨架时使用
+    use_cases: 当用户需要自定义坐标轴（如Vp/Vs）、过滤特定深度或属性、或者生成交互式图表时使用。
     parameters:
       type: object
       properties:
-        type:
+        x_expression:
           type: string
-          enum: [ND, MN]
-          description: "交会图类型: ND=中子密度交会, MN=M-N图版"
-        rhob_curve:
+          description: "X轴数据的计算表达式。**重要**: 如果用户说 '速度'/'Velocity'，必须直接传 'Velocity' (不要自己映射为DT)；如果说 '阻抗'，传 'Impedance'。让工具内部处理物理转换。"
+        y_expression:
           type: string
-          description: "密度曲线名称，默认'RHOB'"
-        nphi_curve:
+          description: "Y轴数据的计算表达式。同上，优先使用物理含义词汇 (如 'Density', 'Porosity', 'Vp/Vs')."
+        color_expression:
           type: string
-          description: "中子曲线名称，默认'NPHI'"
-        dt_curve:
+          description: "用于着色的曲线或表达式 (如 'GR', 'Vsh')"
+        filter_query:
           type: string
-          description: "声波曲线名称(MN图版需要)，默认'DT'"
+          description: "数据过滤条件 (Pandas Query 语法), 例如 'GR < 60 & DEPTH >= 2000'"
+        depth_start:
+          type: number
+          description: "分析起始深度 (可选, 优先使用 filter_query)"
+        depth_end:
+          type: number
+          description: "分析结束深度 (可选)"
+        x_min:
+          type: number
+          description: "X轴最小值 (可选)"
+        x_max:
+          type: number
+          description: "X轴最大值 (可选)"
+        y_min:
+          type: number
+          description: "Y轴最小值 (可选)"
+        y_max:
+          type: number
+          description: "Y轴最大值 (可选)"
+        c_min:
+          type: number
+          description: "色标最小值 (可选)"
+        c_max:
+          type: number
+          description: "色标最大值 (可选)"
+        x_inverse:
+          type: boolean
+          description: "是否反转X轴 (如声波时差通常反转)"
+        y_inverse:
+          type: boolean
+          description: "是否反转Y轴 (如深度轴)"
+        presets:
+          type: string
+          enum: [ND, MN, PICKETT, BUCKLES]
+          description: "预设图版类型 (可选): ND=中子密度, MN=M-N图, PICKETT=皮克特图. 如果指定预设，可省略 x/y_expression"
 
   - name: calculate_vsh
     entry_point: quantitative:calculate_vsh

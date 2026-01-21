@@ -20,6 +20,7 @@ Graph Topology:
 from typing import TypedDict, Annotated, List, Dict, Any, Optional
 import operator
 import logging
+import re
 from langgraph.graph import StateGraph, END
 
 from backend.agents.agent_loader import (
@@ -28,6 +29,7 @@ from backend.agents.agent_loader import (
     get_router_keywords,
     get_specialist_agents
 )
+from backend.db.checkpointer import MongoDBSaver
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +63,22 @@ class AgentState(TypedDict):
 
 # --- Node Functions ---
 
+def sanitize_history_text(history: List[str]) -> str:
+    """
+    Joins history and removes heavy data blocks (like ECharts JSON) to save tokens.
+    """
+    full_text = "\n".join(history)
+    # Regex to find ```echarts ... ``` blocks and replace content
+    # Use re.DOTALL to match newlines
+    sanitized = re.sub(
+        r'```echarts\n.*?\n```', 
+        '[Chart Data Generated - Details Omitted for Token Optimization]', 
+        full_text, 
+        flags=re.DOTALL
+    )
+    return sanitized
+
+
 def router_node(state: AgentState) -> Dict[str, Any]:
     """
     Decides which specialist should be the 'First Responder' based on query keywords.
@@ -75,7 +93,19 @@ def router_node(state: AgentState) -> Dict[str, Any]:
     if analysis_log:
         analysis_log.start_node("router")
     
-    query = state["discussion_history"][0] if state["discussion_history"] else ""
+    # Find the latest user message for routing
+    query = ""
+    if state["discussion_history"]:
+        # Search backwards for the most recent user input
+        for msg in reversed(state["discussion_history"]):
+            if msg.startswith("User Note:") or msg.startswith("User Follow-up:"):
+                # Remove prefix for keyword matching
+                query = msg.split(":", 1)[1].strip()
+                break
+        
+        # Fallback to first message if no explicit user tag found (shouldn't happen)
+        if not query:
+            query = state["discussion_history"][0]
     query_lower = query.lower()
     
     # Get keyword mappings from registry
@@ -109,15 +139,12 @@ def router_node(state: AgentState) -> Dict[str, Any]:
 
 
 def specialist_node(state: AgentState) -> Dict[str, Any]:
-    """
-    Dynamically calls the specialist agent based on router_decision or arbitrator dispatch.
-    Injects project context and relevant skills into the agent's context.
-    """
+    # ... (imports unchanged)
     from backend.agents.skill_loader import build_agent_context
     from backend.agents.agent_loader import get_agent_skills
     from backend.core.analysis_logger import get_current_logger
     
-    # Determine which agent to call
+    # ... (determine agent unchanged)
     arb_output = state.get("arbitrator_output")
     
     if arb_output and arb_output.get("next_agent"):
@@ -129,7 +156,7 @@ def specialist_node(state: AgentState) -> Dict[str, Any]:
         question = ""
         logger.info(f"--- Specialist Node (Routed: {agent_key}) ---")
     
-    # Get agent instance
+    # Get agent instance (unchanged)
     agent = get_agent_instance(agent_key)
     if not agent:
         logger.error(f"Agent not found: {agent_key}")
@@ -138,34 +165,35 @@ def specialist_node(state: AgentState) -> Dict[str, Any]:
             "agent_results": state.get("agent_results", {})
         }
     
-    # Get agent display name
+    # Get agent display name (unchanged)
     agent_name = get_specialist_agents().get(agent_key, {}).get('name', agent_key)
     
-    # Log node start with agent info
+    # Log node start (unchanged)
     analysis_log = get_current_logger()
     if analysis_log:
         analysis_log.start_node("specialist", agent_key=agent_key, agent_name=agent_name)
     
-    # Build context with project background and skills
+    # Build context (unchanged)
     agent_skills = get_agent_skills(agent_key)
     
-    # Log skills being loaded
+    # Log skills (unchanged)
     if analysis_log:
         for skill in agent_skills:
             analysis_log.log_skill_loaded(skill)
     
     skills_context = build_agent_context(agent_skills)
     
-    # Combine: skills context + discussion history + question
-    discussion = "\n".join(state.get("discussion_history", []))
-    full_context = f"{skills_context}\n\n## 分析讨论\n{discussion}"
+    # Combine: skills context + SANITIZED discussion history + question
+    discussion_sanitized = sanitize_history_text(state.get("discussion_history", []))
+    
+    full_context = f"{skills_context}\n\n## 分析讨论\n{discussion_sanitized}"
     if question:
         full_context += f"\n\nArbitrator Question: {question}"
     
     # Run analysis
     result = agent.analyze(state["input_data"], full_context)
     
-    # Log confidence
+    # ... (rest of function unchanged)
     confidence = result.get('confidence', 0.0)
     if analysis_log:
         analysis_log.log_confidence(confidence)
@@ -203,8 +231,11 @@ def arbitrator_node(state: AgentState) -> Dict[str, Any]:
         logger.error("Arbitrator not found!")
         return {"final_output": {"status": "ERROR", "decision": "Arbitrator not found"}}
     
-    context = "\n".join(state["discussion_history"])
+    # Use SANITIZED history
+    context = sanitize_history_text(state["discussion_history"])
     result = arb.analyze(state["input_data"], context)
+    
+    # ... (rest unchanged)
     
     # Format message
     confidence = result.get('confidence', 0.0)
@@ -274,7 +305,7 @@ def router_edge(state: AgentState) -> str:
 
 # --- Graph Construction ---
 
-def build_workflow():
+def build_workflow(checkpointer=None):
     """Build and compile the workflow graph."""
     
     workflow = StateGraph(AgentState)
@@ -303,11 +334,12 @@ def build_workflow():
         }
     )
     
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)
 
 
-# Compile the workflow
-app = build_workflow()
+# Compile the workflow with MongoDB checkpointer
+checkpointer = MongoDBSaver()
+app = build_workflow(checkpointer=checkpointer)
 
 
 def create_initial_state(input_data: Dict[str, Any], user_question: str = "") -> AgentState:

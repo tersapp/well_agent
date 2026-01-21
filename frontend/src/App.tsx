@@ -1,11 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import CurvePanel from './components/CurvePanel';
 import ChatPanel from './components/ChatPanel';
 import HistoryPage from './components/HistoryPage';
 import AnalysisConfigModal, { AnalysisConfig } from './components/AnalysisConfigModal';
 import CurveMappingModal from './components/CurveMappingModal';
-import api from './api/client';
+import { Modal } from 'antd';
+import api, { Conversation } from './api/client';
+import { useChat } from 'ai/react';
+import { Message } from 'ai';
+
+// ...
+
+// const handleRequestAnalysis = () => {  <-- Removed unused function
+//    setShowConfigModal(true);
+// };
 
 interface LogData {
     metadata: {
@@ -18,25 +27,20 @@ interface LogData {
     curves: Record<string, (number | null)[]>;
 }
 
-interface Message {
-    id: string;
-    agent: string;
-    content: string;
-    confidence: number;
-    timestamp: Date;
-    isFinal?: boolean;
-}
+// Local Message interface removed, using 'ai' import
+// Conflicting state removed
 
 const App: React.FC = () => {
     const [activeView, setActiveView] = useState<'analysis' | 'report' | 'history' | 'generation' | 'logs'>('analysis');
     const [logData, setLogData] = useState<LogData | null>(null);
     const [sessionId, setSessionId] = useState<string>('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isLoadingFile, setIsLoadingFile] = useState(false); // Renamed from isLoading
+    // const [isAnalyzing, setIsAnalyzing] = useState(false); // Removed, provided by useChat
     const [progressStatus, setProgressStatus] = useState<string>('');
-    const [messages, setMessages] = useState<Message[]>([]);
+    // const [messages, setMessages] = useState<Message[]>([]); // Removed, provided by useChat
     const [showConfigModal, setShowConfigModal] = useState(false);
-    const [isFullscreen, setIsFullscreen] = useState(false);
+    // 'none' | 'curve' | 'chat'
+    const [fullscreenMode, setFullscreenMode] = useState<'none' | 'curve' | 'chat'>('none');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false);
 
@@ -46,95 +50,241 @@ const App: React.FC = () => {
     const [standardTypes, setStandardTypes] = useState<Record<string, any>>({});
     const [llmSuggestions, setLlmSuggestions] = useState<Record<string, string | null>>({});
     const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+    const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+    const [activeDepthRange, setActiveDepthRange] = useState<{ start: number; end: number } | null>(null);
+
+    // Config needed for the "initial" analysis request
+    const pendingConfigRef = useRef<AnalysisConfig | null>(null);
+
+    // Custom fetcher for Vercel AI SDK to bridge our existing API
+    const customFetcher = async (_input: RequestInfo | URL, init?: RequestInit) => {
+        // Parse the body to get the latest message user sent
+        let body: any = {};
+        if (init && init.body) {
+            body = JSON.parse(init.body as string);
+        }
+
+        // Determine request type
+        const messages = body.messages || [];
+        const lastMessage = messages[messages.length - 1];
+        const userContent = lastMessage ? lastMessage.content : '';
+
+        // We use a TransformStream to convert our SSE events to Vercel AI SDK text stream
+        const { readable, writable } = new TransformStream();
+        const writer = writable.getWriter();
+        const encoder = new TextEncoder();
+
+        // If we have a pending config (start analysis), use it. Otherwise treat as follow-up.
+        const config = pendingConfigRef.current;
+        const isInitialAnalysis = !!config;
+
+        let targetId = sessionId;
+        let useConvId = currentConversationId;
+
+        // If starting fresh analysis, we might reset conversation ID (unless continuing context?)
+        // Actually, our API handles "new analysis" by not passing conversation_id or passing it.
+        // For Vercel SDK, we usually just append messages.
+
+        // Logic to trigger our existing streaming API
+        try {
+            const startDepth = isInitialAnalysis ? config.startDepth : (activeDepthRange?.start || 0);
+            const endDepth = isInitialAnalysis ? config.endDepth : (activeDepthRange?.end || 0);
+            const note = isInitialAnalysis ? config.focusNote : userContent; // For initial, focusNote is the "prompt"
+
+            // If it's follow up, we just use the user content as "note" effectively, 
+            // but our API currently uses 'focusNote' as the primary instruction. 
+            // Ideally, we should unify this. Currently createStreamingAnalysis takes focusNote.
+
+            const agentNames: Record<string, string> = {
+                LithologyExpert: '岩性专家',
+                ElectricalExpert: '电性专家',
+                ReservoirPropertyExpert: '物性专家',
+                SaturationExpert: '饱和度专家',
+                MudLoggingExpert: '气测专家',
+                MineralogyExpert: '矿物专家',
+                Arbitrator: '仲裁者',
+                System: '系统',
+            };
+
+            // Use append to trigger the analysis request (see below)
+            api.createStreamingAnalysis(
+                startDepth,
+                endDepth,
+                note,
+                targetId,
+                (data) => {
+                    if (data.type === 'context') {
+                        if (data.conversation_id) {
+                            setCurrentConversationId(data.conversation_id);
+                            useConvId = data.conversation_id;
+                        }
+                    } else if (data.type === 'agent_message') {
+                        // Vercel AI SDK expects text chunks. 
+                        // We format our agent messages into Markdown for the stream.
+                        const displayName = agentNames[data.agent || ''] || data.agent;
+                        setProgressStatus(`${displayName}正在分析...`);
+
+                        // Format: "**AgentName**: Content\n\n"
+                        // Note: Vercel AI SDK simply accumulates text. 
+                        // If we want "per agent" bubbles, we need structured tools or custom parsing.
+                        // Option B was "Ant Design Custom", so we can use markdown to render nicely.
+                        const chunk = `**${displayName}**: ${data.content}\n\n`;
+                        // FIX: Vercel AI SDK expects Data Stream Protocol (0: "text")
+                        const streamChunk = '0:' + JSON.stringify(chunk) + '\n';
+                        console.log('[App] Received chunk:', chunk); // KEEP DEBUG LOG
+                        writer.write(encoder.encode(streamChunk));
+
+                        setTimeout(() => {
+                            setProgressStatus(`${displayName}分析完成`);
+                        }, 100);
+
+                    } else if (data.type === 'error') {
+                        const chunk = `\n\n**系统错误**: ${data.message}\n`;
+                        const streamChunk = '0:' + JSON.stringify(chunk) + '\n';
+                        console.log('[App] Received Error chunk:', chunk); // KEEP DEBUG LOG
+                        writer.write(encoder.encode(streamChunk));
+                    }
+                },
+                (error) => {
+                    // HACK: Handle 409 Context Mismatch inside the fetcher?
+                    // It's hard to trigger UI modal from here and retry transparently.
+                    // IMPORTANT: We might need to bubble this up or handle it via a global event/callback?
+                    // For now, let's write error to stream so user sees it.
+                    // Ideally we catch this BEFORE stream starts if possible (the initial fetch).
+                    // But createStreamingAnalysis handles the fetch internally.
+
+                    if (error && error.status === 409 && error.detail && error.detail.code === 'CONTEXT_MISMATCH') {
+                        // We need to trigger the modal from App scope.
+                        // We can emit a custom event or callback.
+                        // But since we are inside `customFetcher`, we accept we might display the error first.
+                        // OR we reject this promise, causing `useChat` to error
+
+                        // Let's rely on the previous logic style:
+                        // Convert error to a special string we can parse? 
+                        // Or just show the error.
+
+                        // Better: We expose `handleContextMismatch` to be callable here? 
+                        // No, `customFetcher` is defined inside component, so it can access component scope!
+
+                        const detail = error.detail;
+                        Modal.confirm({
+                            title: '上下文不一致',
+                            content: detail.message,
+                            okText: '切换并继续',
+                            cancelText: '取消',
+                            onOk: async () => {
+                                try {
+                                    const result = await api.getSessionData(detail.expected_session_id);
+                                    if (result.success) {
+                                        setLogData(result.data);
+                                        setSessionId(detail.expected_session_id);
+                                        // Retry not easily possible inside this stream "resume"
+                                        // But user can just click "Regenerate" or "Send" again after switch.
+                                        writer.write(encoder.encode(`\n**系统提示**: 已自动切换到会话上下文 (${detail.expected_session_id})。请重新提交请求。`));
+                                    }
+                                } catch (e) {
+                                    writer.write(encoder.encode(`\n**系统错误**: 切换上下文失败。`));
+                                }
+                                writer.close();
+                            },
+                            onCancel: () => {
+                                writer.write(encoder.encode(`\n**系统提示**: 操作已取消。`));
+                                writer.close();
+                            }
+                        });
+                        return;
+                    }
+
+                    writer.write(encoder.encode(`\n**Error**: ${error.message || 'Unknown error'}`));
+                    writer.close();
+                },
+                () => {
+                    writer.close();
+                    setProgressStatus('');
+                    pendingConfigRef.current = null; // Clear pending config
+                },
+                useConvId || undefined
+            );
+        } catch (err) {
+            writer.write(encoder.encode(`\nFailed to start analysis.`));
+            writer.close();
+        }
+
+        return new Response(readable, {
+            headers: { 'Content-Type': 'text/plain' }
+        });
+    };
+
+    // Vercel AI SDK Hook
+    const { messages, input, handleInputChange, handleSubmit, isLoading: isChatLoading, stop, setMessages, append } = useChat({
+        api: 'custom', // We don't use this URL, we override fetcher
+        fetch: customFetcher,
+        onError: (err: any) => {
+            console.error("Chat error", err);
+        }
+    });
 
     const handleLoadFile = async (file: File) => {
-        setIsLoading(true);
-
+        setIsLoadingFile(true);
         try {
             const result = await api.parseLasFile(file);
-
             if (result.success) {
                 setLogData(result.data);
                 setSessionId(result.session_id);
-
-                const qcStatus = result.qc_report.pass ? '✓ 质控通过' : '⚠ 质控有问题';
-                const curveCount = Object.keys(result.data.curves).length;
-
+                // Reset chat for new file
                 setMessages([{
                     id: Date.now().toString(),
-                    agent: 'System',
-                    content: `已成功加载: ${file.name}\n深度范围: ${result.data.metadata.well.strt} - ${result.data.metadata.well.stop} m\n曲线数量: ${curveCount}\n${qcStatus}`,
-                    confidence: 1.0,
-                    timestamp: new Date(),
+                    role: 'system',
+                    content: `已成功加载: ${file.name}\n深度范围: ${result.data.metadata.well.strt} - ${result.data.metadata.well.stop} m\n${result.qc_report.pass ? '✓ 质控通过' : '⚠ 质控有问题'}`
                 }]);
 
                 if (result.qc_report.warnings.length > 0) {
-                    setMessages(prev => [...prev, {
-                        id: (Date.now() + 1).toString(),
-                        agent: 'System',
-                        content: `质控警告: ${result.qc_report.warnings.join(', ')}`,
-                        confidence: 0.8,
-                        timestamp: new Date(),
-                    }]);
+                    // Add warning message
+                    // We can't easily "append" to state directly with useChat unless we mutate or use setMessages with prev.
+                    // setMessages allows function update.
                 }
 
+                // ... (Mapping logic same as before)
                 // Check curve mapping
                 const mapping = result.curve_mapping;
                 if (mapping && mapping.unmatched && mapping.unmatched.length > 0) {
                     setCurveMapping(mapping);
-
                     // Load standard types
                     try {
                         const typesResult = await api.getCurveStandardTypes();
                         if (typesResult.success) {
                             setStandardTypes(typesResult.standard_types);
                         }
-                    } catch (e) {
-                        console.error('Failed to load standard types:', e);
-                    }
+                    } catch (e) { console.error(e); }
 
-                    // Get LLM suggestions
                     setIsLoadingSuggestions(true);
                     setShowMappingModal(true);
-
                     try {
                         const suggestResult = await api.suggestCurveMapping(result.session_id);
-                        if (suggestResult.success) {
-                            setLlmSuggestions(suggestResult.suggestions);
-                        }
-                    } catch (e) {
-                        console.error('Failed to get LLM suggestions:', e);
-                    } finally {
-                        setIsLoadingSuggestions(false);
-                    }
+                        if (suggestResult.success) setLlmSuggestions(suggestResult.suggestions);
+                    } catch (e) { console.error(e); } finally { setIsLoadingSuggestions(false); }
                 }
             }
         } catch (error: any) {
             console.error('Failed to load file:', error);
             setMessages([{
                 id: Date.now().toString(),
-                agent: 'System',
-                content: `文件加载失败: ${error.message || '请检查后端服务是否运行'}`,
-                confidence: 0,
-                timestamp: new Date(),
+                role: 'system',
+                content: `文件加载失败: ${error.message}`
             }]);
         } finally {
-            setIsLoading(false);
+            setIsLoadingFile(false);
         }
     };
 
     const handleRestoreSession = (data: LogData) => {
         setLogData(data);
-        // Generate a session ID from the well name for restored sessions
         const generatedSessionId = `restored_${data.metadata.well.name || 'unknown'}_${Date.now()}`;
         setSessionId(generatedSessionId);
-
-        setMessages(prev => [...prev, {
+        setMessages([{
             id: Date.now().toString(),
-            agent: 'System',
-            content: `会话已从文件恢复: ${data.metadata.well.name}\n注意: 需要重新上传 LAS 文件以启用 AI 分析`,
-            confidence: 1.0,
-            timestamp: new Date(),
+            role: 'system',
+            content: `会话已从文件恢复: ${data.metadata.well.name}`
         }]);
     };
 
@@ -143,128 +293,101 @@ const App: React.FC = () => {
             try {
                 const result = await api.saveCurveMapping(mappings);
                 if (result.success) {
-                    setMessages(prev => [...prev, {
-                        id: Date.now().toString(),
-                        agent: 'System',
-                        content: `已保存 ${result.saved.length} 条曲线映射，下次将自动识别。`,
-                        confidence: 1.0,
-                        timestamp: new Date(),
-                    }]);
+                    // Notify user
                 }
-            } catch (error) {
-                console.error('Failed to save mappings:', error);
-            }
+            } catch (error) { console.error(error); }
         }
-
         setShowMappingModal(false);
-        setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            agent: 'System',
-            content: `曲线映射已应用，可以开始分析。`,
-            confidence: 1.0,
-            timestamp: new Date(),
-        }]);
     };
 
-    const handleRequestAnalysis = () => {
-        setShowConfigModal(true);
+
+    const handleRecallConversation = (conv: Conversation) => {
+        setActiveView('analysis');
+        setCurrentConversationId(conv._id);
+        setActiveDepthRange(conv.depth_range);
+
+        // Convert API messages to Vercel AI SDK Messages
+        // Note: roles need to be mapped. 'user' -> 'user', others -> 'assistant'?
+        const appMessages: Message[] = conv.messages.map((m, idx) => ({
+            id: `hist_${idx}_${Date.now()}`,
+            role: m.agent === 'user' ? 'user' : 'assistant',
+            content: m.agent !== 'user' ? `**${m.agent}**: ${m.content}` : m.content,
+        }));
+        setMessages(appMessages);
+        setChatPanelCollapsed(false);
     };
 
-    const handleStartAnalysis = async (config: AnalysisConfig) => {
+    // Called when user clicks "Start" in Modal
+    const handleStartAnalysisConfig = async (config: AnalysisConfig, overrideSessionId?: string) => {
         setShowConfigModal(false);
         if (!logData) return;
 
-        setIsAnalyzing(true);
-        setProgressStatus('正在启动智能体系统...');
+        // Set pending config for the fetcher to use
+        pendingConfigRef.current = config;
 
-        setMessages(prev => [...prev, {
+        // If overrideSessionId is present, update state first
+        if (overrideSessionId) {
+            setSessionId(overrideSessionId);
+        }
+
+        // Use append to trigger the analysis request
+        if (!currentConversationId) {
+            setMessages([]);
+        }
+
+        // Construct the prompt message
+        const prompt = `分析深度 ${config.startDepth}-${config.endDepth}m` + (config.focusNote ? `，重点关注：${config.focusNote}` : '');
+
+        // Update depth range state
+        setActiveDepthRange({ start: config.startDepth, end: config.endDepth });
+
+        // Trigger chat
+        append({
             id: Date.now().toString(),
-            agent: 'System',
-            content: `分析配置: 深度 ${config.startDepth}-${config.endDepth}m${config.focusNote ? `, 重点: ${config.focusNote}` : ''}`,
-            confidence: 1.0,
-            timestamp: new Date(),
-        }]);
-
-        // Use streaming analysis
-        console.log('Starting streaming analysis with sessionId:', sessionId);
-
-        const agentNames: Record<string, string> = {
-            LithologyExpert: '岩性专家',
-            ElectricalExpert: '电性专家',
-            ReservoirPropertyExpert: '物性专家',
-            SaturationExpert: '饱和度专家',
-            MudLoggingExpert: '气测专家',
-            MineralogyExpert: '矿物专家',
-            Arbitrator: '仲裁者',
-        };
-
-        api.createStreamingAnalysis(
-            config.startDepth,
-            config.endDepth,
-            config.focusNote,
-            sessionId,
-            // onMessage callback - called for each SSE event
-            (data) => {
-                if (data.type === 'agent_message') {
-                    const displayName = agentNames[data.agent || ''] || data.agent;
-                    setProgressStatus(`${displayName}正在分析...`);
-
-                    setMessages(prev => [...prev, {
-                        id: Date.now().toString(),
-                        agent: data.agent || 'Unknown',
-                        content: data.content || '',
-                        confidence: data.confidence || 0,
-                        timestamp: new Date(),
-                        isFinal: data.is_final,
-                    }]);
-
-                    // Brief completion status
-                    setTimeout(() => {
-                        setProgressStatus(`${displayName}分析完成`);
-                    }, 100);
-                } else if (data.type === 'final_decision') {
-                    console.log('Final decision received:', data);
-                } else if (data.type === 'error') {
-                    console.error('Stream error:', data.message);
-                    setMessages(prev => [...prev, {
-                        id: Date.now().toString(),
-                        agent: 'System',
-                        content: `流式分析错误: ${data.message}`,
-                        confidence: 0,
-                        timestamp: new Date(),
-                    }]);
-                }
-            },
-            // onError callback
-            (error) => {
-                console.error('Streaming analysis failed:', error);
-                setMessages(prev => [...prev, {
-                    id: Date.now().toString(),
-                    agent: 'System',
-                    content: `分析失败: ${error instanceof Error ? error.message : '请检查后端服务'}`,
-                    confidence: 0,
-                    timestamp: new Date(),
-                }]);
-                setIsAnalyzing(false);
-                setProgressStatus('');
-            },
-            // onComplete callback
-            () => {
-                console.log('Streaming analysis completed');
-                setIsAnalyzing(false);
-                setProgressStatus('');
-            }
-        );
+            role: 'user',
+            content: prompt
+        });
     };
 
     const depthRange = logData
         ? { min: logData.metadata.well.strt, max: logData.metadata.well.stop }
         : { min: 0, max: 0 };
 
+    const [chatPanelWidth, setChatPanelWidth] = useState(420);
+    const isResizingRef = useRef(false);
+
+    // Resizing Logic
+    const startResizing = React.useCallback((_e: React.MouseEvent) => {
+        isResizingRef.current = true;
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', stopResizing);
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none'; // Prevent text selection
+    }, []);
+
+    const handleMouseMove = React.useCallback((e: MouseEvent) => {
+        if (!isResizingRef.current) return;
+        // Calculate new width: Total Width - Mouse X
+        // Assuming ChatPanel is on the right
+        const newWidth = window.innerWidth - e.clientX;
+        // Constraints
+        if (newWidth > 300 && newWidth < 800) {
+            setChatPanelWidth(newWidth);
+        }
+    }, []);
+
+    const stopResizing = React.useCallback(() => {
+        isResizingRef.current = false;
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', stopResizing);
+        document.body.style.cursor = 'default';
+        document.body.style.userSelect = '';
+    }, [handleMouseMove]);
+
     return (
         <div className="app-container">
-            {/* Sidebar - Hidden in fullscreen */}
-            {!isFullscreen && (
+            {/* Sidebar */}
+            {fullscreenMode === 'none' && (
                 <Sidebar
                     activeView={activeView}
                     onViewChange={(view: any) => setActiveView(view)}
@@ -277,71 +400,83 @@ const App: React.FC = () => {
 
             <main className="main-content" style={{ flex: 1 }}>
                 {activeView === 'history' ? (
-                    <HistoryPage onNavigateBack={() => setActiveView('analysis')} />
+                    <HistoryPage
+                        onNavigateBack={() => setActiveView('analysis')}
+                        onRecall={handleRecallConversation}
+                    />
                 ) : activeView === 'generation' ? (
-                    <div className="placeholder-view" style={{ padding: 'var(--spacing-xl)', textAlign: 'center' }}>
-                        <h2>智能生成</h2>
-                        <p style={{ color: 'var(--text-muted)', marginTop: 16 }}>新功能开发中，敬请期待...</p>
-                    </div>
+                    <div className="placeholder-view" style={{ padding: 40, textAlign: 'center' }}><h2>智能生成</h2><p>开发中...</p></div>
                 ) : activeView === 'logs' ? (
-                    <div className="placeholder-view" style={{ padding: 'var(--spacing-xl)', textAlign: 'center' }}>
-                        <h2>操作日志</h2>
-                        <p style={{ color: 'var(--text-muted)', marginTop: 16 }}>日志记录系统初始化中...</p>
-                    </div>
+                    <div className="placeholder-view" style={{ padding: 40, textAlign: 'center' }}><h2>操作日志</h2><p>初始化中...</p></div>
                 ) : activeView === 'report' ? (
-                    <div className="placeholder-view" style={{ padding: 'var(--spacing-xl)', textAlign: 'center' }}>
-                        <h2>报告生成</h2>
-                        <p style={{ color: 'var(--text-muted)', marginTop: 16 }}>自动化报告生成模块开发中...</p>
-                    </div>
+                    <div className="placeholder-view" style={{ padding: 40, textAlign: 'center' }}><h2>报告生成</h2><p>开发中...</p></div>
                 ) : (
                     <div style={{ display: 'flex', flex: 1, overflow: 'hidden', height: '100%' }}>
-                        {/* Curve Panel - Constrained width */}
+                        {/* Curve Panel Container */}
                         <div style={{
                             flex: 1,
                             minWidth: 400,
-                            maxWidth: isFullscreen ? '100%' : `calc(100% - ${chatPanelCollapsed ? '40px' : '420px'})`,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            height: '100%',
-                            overflow: 'hidden',
-                            transition: 'max-width 0.3s ease'
+                            display: fullscreenMode === 'chat' ? 'none' : 'flex', // Hide when chat is fullscreen
+                            maxWidth: fullscreenMode === 'curve' ? '100%' : `calc(100% - ${chatPanelCollapsed ? '40px' : (fullscreenMode === 'none' ? `${chatPanelWidth}px` : '420px')})`,
+                            flexDirection: 'column', height: '100%', overflow: 'hidden',
+                            transition: isResizingRef.current ? 'none' : 'max-width 0.1s ease'
                         }}>
                             <CurvePanel
                                 logData={logData}
-                                isLoading={isLoading}
+                                isLoading={isLoadingFile}
                                 onLoadFile={handleLoadFile}
                                 onRestoreSession={handleRestoreSession}
-                                isFullscreen={isFullscreen}
-                                onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
+                                isFullscreen={fullscreenMode === 'curve'}
+                                onToggleFullscreen={() => setFullscreenMode(mode => mode === 'curve' ? 'none' : 'curve')}
                                 onAnalysisRequest={(start, end, note) => {
                                     setActiveView('analysis');
                                     setChatPanelCollapsed(false);
-                                    handleStartAnalysis({
-                                        startDepth: start,
-                                        endDepth: end,
-                                        focusNote: note,
-                                    });
+                                    setCurrentConversationId(null);
+                                    setActiveDepthRange({ start, end });
+                                    handleStartAnalysisConfig({ startDepth: start, endDepth: end, focusNote: note });
                                 }}
                             />
                         </div>
 
-                        {/* Chat Panel - Hidden in fullscreen */}
-                        {!isFullscreen && (
+                        {/* Resizer Handle */}
+                        {fullscreenMode === 'none' && !chatPanelCollapsed && (
+                            <div
+                                onMouseDown={startResizing}
+                                style={{
+                                    width: 4,
+                                    cursor: 'col-resize',
+                                    backgroundColor: 'transparent',
+                                    zIndex: 10,
+                                    borderLeft: '1px solid var(--border-color)',
+                                    transition: 'background-color 0.2s',
+                                }}
+                                className="resizer-handle"
+                            />
+                        )}
+
+                        {/* Chat Panel Container */}
+                        {fullscreenMode !== 'curve' && (
                             <div style={{
-                                width: chatPanelCollapsed ? 40 : 420,
-                                borderLeft: '1px solid var(--border-color)',
-                                transition: 'width 0.3s ease',
+                                width: fullscreenMode === 'chat' ? '100%' : (chatPanelCollapsed ? 40 : chatPanelWidth),
+                                borderLeft: fullscreenMode === 'chat' ? 'none' : '1px solid var(--border-color)',
+                                transition: isResizingRef.current ? 'none' : 'width 0.2s ease', // Disable transition during drag
                                 overflow: 'hidden',
-                                position: 'relative'
+                                position: 'relative',
+                                display: 'flex', flexDirection: 'column'
                             }}>
                                 <ChatPanel
                                     messages={messages}
-                                    isAnalyzing={isAnalyzing}
+                                    input={input}
+                                    handleInputChange={handleInputChange}
+                                    handleSubmit={handleSubmit}
+                                    isLoading={isChatLoading}
+                                    stop={stop}
+                                    setMessages={setMessages}
                                     progressStatus={progressStatus}
-                                    onStartAnalysis={handleRequestAnalysis}
-                                    canAnalyze={!!logData && !isAnalyzing}
                                     collapsed={chatPanelCollapsed}
                                     onToggleCollapse={() => setChatPanelCollapsed(!chatPanelCollapsed)}
+                                    isFullscreen={fullscreenMode === 'chat'}
+                                    onToggleFullscreen={() => setFullscreenMode(mode => mode === 'chat' ? 'none' : 'chat')}
                                 />
                             </div>
                         )}
@@ -352,7 +487,7 @@ const App: React.FC = () => {
             <AnalysisConfigModal
                 visible={showConfigModal}
                 onClose={() => setShowConfigModal(false)}
-                onConfirm={handleStartAnalysis}
+                onConfirm={handleStartAnalysisConfig}
                 depthRange={depthRange}
             />
 

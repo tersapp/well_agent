@@ -3,7 +3,9 @@ import sys
 import json
 import logging
 import asyncio
+from datetime import datetime
 from typing import Optional, List, Dict
+from bson import ObjectId
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -27,6 +29,8 @@ app = FastAPI(
     version="1.1.0"
 )
 
+from fastapi.staticfiles import StaticFiles
+
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
@@ -36,10 +40,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static directory for high-performance chart data
+# Ensure directory exists
+os.makedirs("backend/static/charts", exist_ok=True)
+app.mount("/static", StaticFiles(directory="backend/static"), name="static")
+
 class AnalysisRequest(BaseModel):
     start_depth: float
     end_depth: float
     focus_note: Optional[str] = None
+    conversation_id: Optional[str] = None # Added for follow-up support
 
 class AnalysisResponse(BaseModel):
     status: str
@@ -98,6 +108,19 @@ async def parse_las_file(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Failed to parse LAS: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/session/{session_id}/data")
+async def get_session_data(session_id: str):
+    """Retrieve full log data for a specific session ID (from memory)."""
+    if session_id not in parsed_data_store:
+        raise HTTPException(status_code=404, detail="Session data not found in memory. Please re-upload.")
+    
+    return convert_numpy_types({
+        "success": True,
+        "session_id": session_id,
+        "data": parsed_data_store[session_id]
+    })
 
 
 # --- Curve Mapping Endpoints ---
@@ -400,7 +423,8 @@ async def run_analysis(request: AnalysisRequest, session_id: str = Query(default
             
             # Run the workflow
             logger.info("Invoking multi-agent workflow...")
-            result = workflow_app.invoke(initial_state)
+            # Use ainvoke because the checkpointer is async
+            result = await workflow_app.ainvoke(initial_state)
             logger.info("Workflow completed")
             
             # Format result for frontend
@@ -588,29 +612,119 @@ async def analyze_stream(request: AnalysisRequest, session_id: str = Query(...))
     SSE endpoint for streaming analysis results.
     Each agent's output is pushed as an event as soon as it completes.
     """
-    # Validate session
-    if session_id not in parsed_data_store:
-        raise HTTPException(status_code=400, detail="Session not found. Please upload a LAS file first.")
+    from backend.db.conversation_service import ConversationService
+    from backend.db.mongodb import check_connection
+
+    # Validate session availability first (generic)
+    # We will refine this check based on conversation history below
     
-    log_data = parsed_data_store[session_id]
+    # Generate or reuse conversation ID
+    conversation_id = request.conversation_id
+    is_followup = conversation_id is not None
+    
+    # Context Validation Logic
+    if is_followup:
+        conversation = await ConversationService.get_by_id(conversation_id)
+        if not conversation:
+             raise HTTPException(status_code=404, detail="Conversation not found")
+        
+        history_session_id = conversation.get("session_id")
+        history_well_name = conversation.get("well_name", "Unknown Well")
+        
+        # 1. Detection: Context Mismatch
+        if history_session_id and history_session_id != session_id:
+            # Return 409 to trigger frontend prompt
+            raise HTTPException(
+                status_code=409, 
+                detail={
+                    "code": "CONTEXT_MISMATCH",
+                    "message": f"当前对话属于 {history_well_name}, 与当前打开的井不一致。是否切换上下文？",
+                    "expected_session_id": history_session_id,
+                    "current_session_id": session_id
+                }
+            )
+        
+        # 2. Data Loading (Normal Flow): Use history session if available (or current if match)
+        target_session_id = history_session_id or session_id
+        
+        if target_session_id not in parsed_data_store:
+             raise HTTPException(status_code=404, detail=f"Data for {target_session_id} not found in memory. Please re-upload the LAS file.")
+             
+        log_data = parsed_data_store[target_session_id]
+        
+    else:
+        # New conversation
+        if session_id not in parsed_data_store:
+             raise HTTPException(status_code=400, detail="Session not found. Please upload a LAS file first.")
+             
+        log_data = parsed_data_store[session_id]
+
+        # Create a new conversation record to get an ID
+        well_name = session_id.split('.')[0].upper().replace('_WIRE', '').replace('_', '-') if session_id else "Unknown"
+        conversation_id = await ConversationService.create({
+            "session_id": session_id,
+            "well_name": well_name,
+            "depth_range": {"start": request.start_depth, "end": request.end_depth},
+            "user_question": request.focus_note or "深度段分析",
+            "messages": [],
+            "final_decision": None
+        })
+    
+    config = {"configurable": {"thread_id": conversation_id}}
+    
+    # Prepare Data & State
+    # log_data already set above
     sliced_data = extract_depth_range_data(log_data, request.start_depth, request.end_depth)
     
-    # Initial state for workflow
-    initial_state = {
-        "input_data": sliced_data,
-        "discussion_history": [f"User Note: {request.focus_note}"] if request.focus_note else [],
-        "agent_results": {},
-        "router_decision": None,
-        "arbitrator_output": None,
-        "final_output": None,
-        "round_count": 0
-    }
-    
+    if is_followup:
+        # Add new follow-up message to discussion history
+        new_msg = f"User Follow-up: {request.focus_note}"
+        # Start new run with this input AND update the data slice
+        # FIX: Must update input_data so agent sees the NEW depth range
+        initial_state = {
+            "discussion_history": [new_msg],
+            "input_data": sliced_data,
+            # Reset intermediate results to force re-evaluation if needed
+            "router_decision": None, 
+            "arbitrator_output": None,
+            "final_output": None
+        }
+    else:
+        initial_state = {
+            "input_data": sliced_data,
+            "discussion_history": [f"User Note: {request.focus_note}"] if request.focus_note else [],
+            "agent_results": {},
+            "router_decision": None,
+            "arbitrator_output": None,
+            "final_output": None,
+            "round_count": 0
+        }
     async def event_generator():
         """Generator that yields SSE events as workflow progresses."""
         try:
+            # 1. Provide Context
+            context_data = convert_numpy_types({
+                'type': 'context', 
+                'depth': {'start': request.start_depth, 'end': request.end_depth}, 
+                'conversation_id': conversation_id, 
+                'is_followup': is_followup
+            })
+            yield f"data: {json.dumps(context_data, ensure_ascii=False)}\n\n"
+            
+            messages_to_save = []
+            
+            # If this is a follow-up, persist the user's question too
+            if is_followup and request.focus_note:
+                messages_to_save.append({
+                    "agent": "User", 
+                    "content": request.focus_note, 
+                    "confidence": 1.0, 
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            final_decision_to_save = None
+            
             # Use astream to get intermediate steps
-            async for event in workflow_app.astream(initial_state):
+            async for event in workflow_app.astream(initial_state, config=config):
                 # event is a dict with node_name: node_output
                 for node_name, node_output in event.items():
                     # Skip internal nodes
@@ -621,31 +735,30 @@ async def analyze_stream(request: AnalysisRequest, session_id: str = Query(...))
                     history = node_output.get("discussion_history", [])
                     
                     for msg in history:
+                        # Prevent echoing the initial User Note or Follow-up
+                        if msg.startswith("User Note:") or msg.startswith("User Follow-up:"):
+                            continue
+                            
                         # Parse the message to extract agent and content
                         if ":" in msg:
                             parts = msg.split(":", 1)
                             agent_key = parts[0].strip()
                             content = parts[1].strip() if len(parts) > 1 else ""
                             
-                            # Extract confidence
-                            confidence = 0.0
                             # Extract confidence (Robust version)
                             confidence = 0.0
                             if "Conf=" in content:
                                 try:
                                     import re
                                     match = re.search(r'Conf=(\d+\.?\d*)', content)
-                                    if match:
-                                        confidence = float(match.group(1))
-                                except:
-                                    pass
+                                    if match: confidence = float(match.group(1))
+                                except: pass
                             elif "(Conf:" in content:
                                 try:
                                     conf_start = content.index("(Conf:") + 6
                                     conf_end = content.index(")", conf_start)
                                     confidence = float(content[conf_start:conf_end].strip())
-                                except:
-                                    pass
+                                except: pass
                             
                             event_data = {
                                 "type": "agent_message",
@@ -655,20 +768,47 @@ async def analyze_stream(request: AnalysisRequest, session_id: str = Query(...))
                                 "is_final": agent_key == "Arbitrator" and "FINAL" in msg
                             }
                             
-                            yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+                            # Keep track for DB save
+                            messages_to_save.append({
+                                "agent": agent_key, 
+                                "content": content, 
+                                "confidence": confidence,
+                                "timestamp": datetime.utcnow().isoformat()
+                            })
+                            
+                            safe_event_data = convert_numpy_types(event_data)
+                            yield f"data: {json.dumps(safe_event_data, ensure_ascii=False)}\n\n"
                             await asyncio.sleep(0.1)  # Small delay for frontend rendering
                     
                     # Check for final output
                     final = node_output.get("final_output")
                     if final and final.get("status") == "FINAL":
+                        final_decision_to_save = final
                         event_data = {
                             "type": "final_decision",
                             "decision": final.get("decision", ""),
                             "confidence": final.get("confidence", 0.0),
                             "reasoning": final.get("reasoning", "")
                         }
-                        yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+                        safe_event_data = convert_numpy_types(event_data)
+                        yield f"data: {json.dumps(safe_event_data, ensure_ascii=False)}\n\n"
             
+            # 4. Save/Update Conversation in DB
+            if messages_to_save:
+                if is_followup:
+                    existing = await ConversationService.get_by_id(conversation_id)
+                    if existing:
+                        updated_messages = existing.get("messages", []) + messages_to_save
+                        await ConversationService._get_collection().update_one(
+                            {"_id": ObjectId(conversation_id)},
+                            {"$set": {"messages": updated_messages, "final_decision": final_decision_to_save}}
+                        )
+                else:
+                    await ConversationService._get_collection().update_one(
+                        {"_id": ObjectId(conversation_id)},
+                        {"$set": {"messages": messages_to_save, "final_decision": final_decision_to_save}}
+                    )
+
             # Send done event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
             

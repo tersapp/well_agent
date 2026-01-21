@@ -9,99 +9,148 @@ def identify_curve_shape(
     window_size: int = 5
 ) -> Dict[str, Any]:
     """
-    Identify the morphological shape of a log curve (Bell, Funnel, Box).
-    Useful for sedimentary facies analysis.
+    Identify the morphological shape of a log curve using quantitative petrophysical parameters.
+    
+    Algorithms:
+    1. Serration Index (SI): Ratio of actual curve length to chord length. Quantifies roughness.
+       - SI > 1.4 -> Serrated / Finger-like (High frequency fluctuations)
+    2. Relative Center of Gravity (RCG): Gravitational center of the curve area.
+       - RCG > 0.5 -> Top-heavy (Fining Up / Bell trend if GR increases up) -> Wait, GR low is sand.
+         - Case Sand: Low GR. Case Shale: High GR.
+         - Bell (Fining Up): Sand at bottom (Low GR) -> Shale at top (High GR). GR Increases Upwards.
+           Shape looks like a Bell? NO. Bell shape usually means Base is Sharp, Top is Gradational.
+           Actually 'Bell' in log shape usually refers to the SP/GR visual appearance.
+           Fining Up: GR increases upward.
+           Coarsening Up: GR decreases upward (Funnel).
+    3. Linear Trend (Slope): Global trend direction.
     
     Args:
-        curve_name: Usually GR or SP.
-        window_size: Smoothing window size (number of samples) to remove noise.
+        log_data: Dictionary containing 'curves' with numpy arrays.
+        curve_name: Name of the curve to analyze (usually GR).
     """
     curves = log_data.get('curves', {})
-    depth_curve = log_data.get('curves', {}).get('DEPTH') # Default alias check needed in agent
+    depth_curve = curves.get('DEPTH') or curves.get('Depth') or curves.get('DEPT')
     
-    # 1. Retrieve Data
-    # In a real agent, we might need to handle curve aliasing before calling this, 
-    # or pass both standard and alias map. For now assume agent resolved 'GR'.
-    
+    # 1. Retrieve and Validate Data
     if curve_name not in curves:
-         return {"error": f"Curve {curve_name} not found"}
-         
-    raw_vals = curves[curve_name]
-    
-    # 2. Slice by Depth
-    if depth_curve and (depth_start is not None or depth_end is not None):
-        # ... Slicing logic ...
-        # Simplified: assume input log_data is already sliced or we process whole.
-        # Let's assume we process whole for now to save complexity, 
-        # Agent should slice data before passing if needed, or we filter indices here.
-        vals = []
-        depths = []
-        for d, v in zip(depth_curve, raw_vals):
-            if d is None or v is None: continue
-            if depth_start and d < depth_start: continue
-            if depth_end and d > depth_end: continue
-            vals.append(v)
-            depths.append(d)
-    else:
-        # Just filter Nones
-        vals = [v for v in raw_vals if v is not None]
-        depths = list(range(len(vals))) # Dummy depth
+        return {"error": f"Curve {curve_name} not found"}
+    if depth_curve is None:
+        return {"error": "Depth curve not found"}
         
-    if len(vals) < window_size * 2:
+    raw_vals = np.array(curves[curve_name])
+    depth_vals = np.array(depth_curve)
+    
+    # 2. Slice Data (Handle NaNs)
+    mask = ~np.isnan(raw_vals) & ~np.isnan(depth_vals)
+    if depth_start is not None:
+        mask &= (depth_vals >= depth_start)
+    if depth_end is not None:
+        mask &= (depth_vals <= depth_end)
+        
+    y = raw_vals[mask]
+    x = depth_vals[mask] # Depth increases downwards
+    
+    if len(y) < 10:
         return {"shape": "Undefined (Insufficient Data)", "trend": 0}
-        
-    y = np.array(vals)
-    x = np.array(depths) # Depth increases downwards
+
+    # 3. Normalization (Min-Max to 0-1) for Geometric Calculations
+    # Essential for Serration Index to be unit-independent
+    y_min, y_max = np.min(y), np.max(y)
+    x_min, x_max = np.min(x), np.max(x)
     
-    # 3. Smoothing (OFFSHORE/REAL DATA BEST PRACTICE)
-    # Moving average
-    window = np.ones(window_size) / window_size
-    y_smooth = np.convolve(y, window, mode='valid')
-    # Reject edge effects from depth
-    x_valid = x[window_size-1:]
+    if y_max - y_min == 0 or x_max - x_min == 0:
+        return {"shape": "Box (Linear)", "description": "Constant value"}
+
+    y_norm = (y - y_min) / (y_max - y_min)
+    x_norm = (x - x_min) / (x_max - x_min)
+
+    # 4. Calculate Parameters
     
-    # 4. Stat Analysis: Linear Regression on Smoothed Data
-    # Slope of GR w.r.t Depth
-    slope, intercept = np.polyfit(x_valid, y_smooth, 1)
+    # A. Serration Index (SI)
+    # Arc Length (sum of segments)
+    dy = np.diff(y_norm)
+    dx = np.diff(x_norm)
+    arc_length = np.sum(np.sqrt(dy**2 + dx**2))
+    # Chord Length (Euclidean distance start to end)
+    chord_length = np.sqrt((y_norm[-1] - y_norm[0])**2 + (x_norm[-1] - x_norm[0])**2)
     
-    # Normalize slope? 
-    # Absolute change over interval length
-    total_depth_span = x_valid[-1] - x_valid[0]
-    total_val_change = slope * total_depth_span
+    # Avoid div by zero (though handled by flat check above)
+    serration_index = arc_length / chord_length if chord_length > 0 else 1.0
     
-    # Variance/Rugosity check
-    # Box shape has low overall slope but maybe high variance or just flat.
-    
-    classification = "Unknown"
-    
-    # Thresholds need tuning.
-    # Significant change: > 10 API over the interval?
-    
-    change_magnitude = abs(total_val_change)
-    
-    if change_magnitude < 15: # API units (assuming GR)
-        classification = "Box / Aggrading (箱型)"
-        desc = "Relatively constant values, indicating stable deposition (Aggradation)."
+    # B. Linear Slope (of smoothed data to avoid noise affecting trend)
+    # Smoothing window
+    w = min(window_size, len(y)//2)
+    if w > 1:
+        kernel = np.ones(w) / w
+        y_smooth = np.convolve(y, kernel, mode='valid')
+        x_smooth = x[w-1:]
+        # Recalculate norms for slope? No, use raw slope or normalized slope.
+        # Normalized slope is better for generalized thresholds.
+        # Let's use normalized coordinates for slope to match limits.
+        y_s_norm = (y_smooth - y_min) / (y_max - y_min)
+        x_s_norm = (x_smooth - x_min) / (x_max - x_min)
+        slope_norm, _ = np.polyfit(x_s_norm, y_s_norm, 1)
     else:
-        if slope < 0:
-            # Depth increases, GR Decreases.
-            # Bottom (High Depth) has Lower GR. Top (Low Depth) has Higher GR.
-            # GR Increases Upwards -> Fining Upwards (for sand)
-            classification = "Bell / Fining Up (钟型)"
-            desc = "Values increase upwards (assuming GR reflects shale content). Retrogradation / Channel Fill."
+        slope_norm, _ = np.polyfit(x_norm, y_norm, 1)
+        
+    # C. Relative Center of Gravity (RCG)
+    # RCG = Sum(Depth_i * GR_i) / Sum(GR_i)  (Using normalized Depth 0-1)
+    # Measures where the "mass" (high GR) is concentrated.
+    # High GR (Shale) at Top (Low Depth value? No, x_norm increases with Depth).
+    # x_norm: 0 (Top) -> 1 (Bottom).
+    # If Fining Up (Bell): Sand (Low GR) at Bottom (1), Shale (High GR) at Top (0).
+    # -> High GR values are at small x_norm. -> Low RCG.
+    # If Coarsening Up (Funnel): Shale (High GR) at Bottom (1), Sand (Low GR) at Top (0).
+    # -> High GR values are at large x_norm. -> High RCG.
+    # Wait, simple Sum(x*GR)/Sum(GR) is the weighted average DEPTH of the GR "mass".
+    
+    rcg = np.sum(x_norm * y_norm) / np.sum(y_norm) if np.sum(y_norm) > 0 else 0.5
+    
+    # 5. Classification Logic
+    # Thresholds are empirical
+    SI_THRESHOLD = 1.4      # Above this is "Serrated"
+    SLOPE_THRESHOLD = 0.15  # |Slope| < 0.15 is "Box"
+    
+    shape = "Unknown"
+    desc = ""
+    
+    # Step 1: Check Serration
+    is_serrated = serration_index > SI_THRESHOLD
+    prefix = "Serrated " if is_serrated else ""
+    
+    # Step 2: Check Trend
+    if abs(slope_norm) < SLOPE_THRESHOLD:
+        # Box / Aggrading
+        # If serrated, it's "Finger" or "Serrated Box"
+        base_shape = "Finger (指状)" if is_serrated else "Box (箱型)"
+        desc = "Stable aggradation" + (", with high frequency fluctuations" if is_serrated else ".")
+    else:
+        # Significant Trend
+        if slope_norm < 0:
+            # Slope < 0: As Depth increases (x goes 0->1), GR decreases (y goes high->low).
+            # Top (0): High GR. Bottom (1): Low GR.
+            # This is Fining Up (Sand at bottom, Shale at top). -> Bell Shape.
+            base_shape = "Bell (钟型)" # Fining Up
+            desc = "Fining up sequence (Retrogradation/Channel Fill)."
         else:
-            # Depth increases, GR Increases.
-            # Bottom has Higher GR. Top has Lower GR.
-            # GR Decreases Upwards -> Coarsening Upwards (for sand)
-            classification = "Funnel / Coarsening Up (漏斗型)"
-            desc = "Values decrease upwards. Progradation / Delta Front."
+            # Slope > 0: As Depth increases, GR increases.
+            # Top: Low GR. Bottom: High GR.
+            # This is Coarsening Up (Shale at bottom, Sand at top). -> Funnel Shape.
+            base_shape = "Funnel (漏斗型)" # Coarsening Up
+            desc = "Coarsening up sequence (Progradation/Delta Front)."
             
+    final_shape = f"{prefix}{base_shape}".strip()
+    # Correct specific naming for purely serrated box -> Finger
+    if base_shape.startswith("Finger"): final_shape = base_shape
+    
     return {
-        "shape": classification,
+        "shape": final_shape,
         "description": desc,
         "stats": {
-            "slope": float(slope),
-            "total_change": float(total_val_change),
-            "avg_value": float(np.mean(y_smooth))
+            "serration_index": round(float(serration_index), 2),
+            "slope_norm": round(float(slope_norm), 2),
+            "rcg": round(float(rcg), 2),
+            "avg_value": float(np.mean(y)),
+            "total_change": float(y[-1] - y[0])
         }
     }

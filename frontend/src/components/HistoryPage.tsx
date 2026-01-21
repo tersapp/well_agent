@@ -4,6 +4,7 @@ import api, { Conversation } from '../api/client';
 
 interface HistoryPageProps {
     onNavigateBack: () => void;
+    onRecall: (conversation: Conversation) => void;
 }
 
 const agentColors: Record<string, string> = {
@@ -30,7 +31,7 @@ const agentNames: Record<string, string> = {
     Router: '路由',
 };
 
-const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigateBack }) => {
+const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigateBack, onRecall }) => {
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [loading, setLoading] = useState(true);
     const [total, setTotal] = useState(0);
@@ -292,12 +293,21 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigateBack }) => {
                                     <h3 style={{ margin: 0, color: 'var(--accent-primary)' }}>
                                         分析详情
                                     </h3>
-                                    <button
-                                        className="btn btn-ghost"
-                                        onClick={() => setSelectedConversation(null)}
-                                    >
-                                        <CloseOutlined />
-                                    </button>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button
+                                            className="btn btn-primary"
+                                            style={{ fontSize: 13 }}
+                                            onClick={() => onRecall(selectedConversation)}
+                                        >
+                                            继续分析
+                                        </button>
+                                        <button
+                                            className="btn btn-ghost"
+                                            onClick={() => setSelectedConversation(null)}
+                                        >
+                                            <CloseOutlined />
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Basic Info */}

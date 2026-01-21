@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useMemo, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
+import { useSelection } from '../context/SelectionContext';
 import TrackColumn from './TrackColumn';
 import DepthColumn from './DepthColumn';
 import TrackContextMenu from './TrackContextMenu';
 import ScaleEditModal from './ScaleEditModal';
 import DepthRangeModal from './DepthRangeModal';
-import LithologyConfigModal from './LithologyConfigModal';
+import LithologyConfigModal, { LithologyRangeDefinition } from './LithologyConfigModal';
 import AnalysisPopup from './AnalysisPopup';
 import { FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons';
 
@@ -116,6 +117,8 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
 
     // Lithology Configs: TrackName -> { Value -> { Color, Label } }
     const [lithologyConfigs, setLithologyConfigs] = useState<Record<string, Record<number, { color: string, label: string }>>>({});
+    // NEW: Range-based Lithology Configs
+    const [lithologyRangeConfigs, setLithologyRangeConfigs] = useState<Record<string, LithologyRangeDefinition[]>>({});
 
     // View Depth State
     const validDepths = useMemo(() => depth.filter(d => d !== null && !isNaN(d)), [depth]);
@@ -129,6 +132,24 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
     const containerRef = useRef<HTMLDivElement>(null);
     const [cursorState, setCursorState] = useState<{ x: number; y: number; depth: number } | null>(null);
     const [scrollLeft, setScrollLeft] = useState(0);
+
+    const { highlightedDepths } = useSelection();
+    const [containerHeight, setContainerHeight] = useState(0);
+
+    // Track container height
+    useEffect(() => {
+        if (!containerRef.current) return;
+        // Initial set
+        setContainerHeight(containerRef.current.clientHeight);
+
+        const ro = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                setContainerHeight(entry.contentRect.height);
+            }
+        });
+        ro.observe(containerRef.current);
+        return () => ro.disconnect();
+    }, []);
 
     // Helper: Get curve value at a specific depth (with linear interpolation)
     const getCurveValueAtDepth = useCallback((curveName: string, targetDepth: number): number | null => {
@@ -388,11 +409,17 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
         });
     }, [contextMenu.trackName, curves]);
 
-    const handleSaveLithologyMap = useCallback((trackName: string, config: Record<number, { color: string, label: string }>) => {
+    const handleSaveLithologyMap = useCallback((trackName: string, config: Record<number, { color: string, label: string }>, rangeConfig?: LithologyRangeDefinition[]) => {
         setLithologyConfigs(prev => ({
             ...prev,
             [trackName]: config
         }));
+        if (rangeConfig) {
+            setLithologyRangeConfigs(prev => ({
+                ...prev,
+                [trackName]: rangeConfig
+            }));
+        }
         setLithConfigModal(prev => ({ ...prev, visible: false }));
     }, []);
 
@@ -434,10 +461,48 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
         setDraggedTrack(null);
     }, [draggedTrack, visibleTracks]);
 
+    // Initialize Lithology Mode for tracks with 'LITH' in name (only once)
+    useEffect(() => {
+        setLithologyModeTracks(prev => {
+            const newSet = new Set(prev);
+            Object.keys(curves).forEach(name => {
+                if (name.toUpperCase().includes('LITH') && !newSet.has(name)) {
+                    // Check if we haven't explicitly disabled it? 
+                    // For simplicity, just add if curve exists. 
+                    // Better: only if trackOrder is changing (new load).
+                    newSet.add(name);
+                }
+            });
+            // To avoid infinite re-renders or overwriting user un-toggles, 
+            // we should technically only do this when 'curves' changes significantly or on mount.
+            // But since 'curves' changes on load, this is fine. 
+            // However, if user unchecked it, this might re-add it if curves prop reference changes.
+            // Let's rely on the fact that we hydrate from 'curves' keys.
+            // Actually, best to do this only when a new track appears.
+            return newSet;
+        });
+    }, [/* Only run on mount or when curve list changes length? No, let's keep it simple for now */]);
+    // Actually, to avoid re-enabling what user disabled, we should use a ref to track "seen" curves.
+    const seenCurves = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        const newSet = new Set(lithologyModeTracks);
+        let changed = false;
+        Object.keys(curves).forEach(name => {
+            if (!seenCurves.current.has(name)) {
+                seenCurves.current.add(name);
+                if (name.toUpperCase().includes('LITH')) {
+                    newSet.add(name);
+                    changed = true;
+                }
+            }
+        });
+        if (changed) setLithologyModeTracks(newSet);
+    }, [curves]);
+
     const getTrackConfig = useCallback((name: string) => {
         const base = getDefaultConfig(name) || dynamicConfigs[name] || { color: '#888888', min: 0, max: 100, unit: '', log: false };
         const custom = customScales[name.toUpperCase()];
-        const isLith = lithologyModeTracks.has(name) || name.toUpperCase().includes('LITH');
+        const isLith = lithologyModeTracks.has(name); // Removed || name.includes('LITH')
         const config = custom ? { ...base, ...custom } : base;
         if (isLith) return { ...config, type: 'lithology' as const };
         return config;
@@ -492,7 +557,8 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
                             maxDepth={maxDepth}
                             width={TRACK_WIDTH}
                             viewDepth={viewDepth}
-                            lithologyMap={lithologyConfigs[name]} // Pass config
+                            lithologyMap={lithologyConfigs[name]}
+                            lithologyRanges={lithologyRangeConfigs[name]} // Pass range config
                             onViewDepthChange={handleViewDepthChange}
                             onContextMenu={handleContextMenu}
                             onDoubleClickScale={handleDoubleClickScale}
@@ -606,6 +672,63 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
                     onConfirm={handleAnalysisConfirm}
                     onCancel={() => setPopupState(prev => ({ ...prev, visible: false }))}
                 />
+
+                {/* Global Highlight Overlay (from Crossplot) */}
+                {highlightedDepths.length > 0 && (() => {
+                    // Constants matching TrackColumn layout
+                    const HEADER_HEIGHT = 24;
+                    const GRID_TOP = 55;
+                    const GRID_BOTTOM = 30;
+
+                    // We need current container height. 
+                    // Since this is inside render, we can't easily get ref.current.clientHeight effectively without state.
+                    // But we can use absolute positioning with percentages if the layout is percentage based?
+                    // No, "GRID_TOP = 55" implies pixels.
+
+                    // Fallback: We need to track height. 
+                    // For now, let's assume valid height if containerRef exists, otherwise hidden.
+                    // A cleaner way is using a state for height.
+                    // Let's rely on 'containerHeight' state which we should add.
+                    if (!containerHeight) return null;
+
+                    const plotTop = HEADER_HEIGHT + GRID_TOP;
+                    const plotBottom = containerHeight - GRID_BOTTOM;
+                    const plotHeight = plotBottom - plotTop;
+
+                    const rangeStart = viewDepth ? viewDepth[0] : minDepth;
+                    const rangeEnd = viewDepth ? viewDepth[1] : maxDepth;
+
+                    return highlightedDepths.map((range: number[], idx: number) => {
+                        // Intersection check
+                        if (range[1] < rangeStart || range[0] > rangeEnd) return null;
+
+                        const effectiveStart = Math.max(range[0], rangeStart);
+                        const effectiveEnd = Math.min(range[1], rangeEnd);
+
+                        const startFraction = (effectiveStart - rangeStart) / (rangeEnd - rangeStart);
+                        const endFraction = (effectiveEnd - rangeStart) / (rangeEnd - rangeStart);
+
+                        const yStart = plotTop + startFraction * plotHeight;
+                        const yEnd = plotTop + endFraction * plotHeight;
+                        const h = Math.max(2, yEnd - yStart); // Min 2px
+
+                        return (
+                            <div key={`hl-${idx}`} style={{
+                                position: 'absolute',
+                                left: DEPTH_TRACK_WIDTH,
+                                right: 0,
+                                top: yStart,
+                                height: h,
+                                backgroundColor: 'rgba(255, 105, 180, 0.4)', // HotPink for visibility
+                                borderTop: '1px solid rgba(255, 20, 147, 0.8)',
+                                borderBottom: '1px solid rgba(255, 20, 147, 0.8)',
+                                pointerEvents: 'none',
+                                zIndex: 95,
+                                transition: 'top 0.1s, height 0.1s'
+                            }} />
+                        );
+                    });
+                })()}
             </div>
 
 
@@ -615,7 +738,7 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
                 x={contextMenu.x}
                 y={contextMenu.y}
                 trackName={contextMenu.trackName}
-                isLithologyMode={lithologyModeTracks.has(contextMenu.trackName) || contextMenu.trackName.toUpperCase().includes('LITH')}
+                isLithologyMode={lithologyModeTracks.has(contextMenu.trackName)}
                 canMoveLeft={visibleTracks.indexOf(contextMenu.trackName) > 0}
                 canMoveRight={visibleTracks.indexOf(contextMenu.trackName) < visibleTracks.length - 1}
                 onClose={() => setContextMenu(prev => ({ ...prev, visible: false }))}
@@ -634,6 +757,7 @@ const LogChart = forwardRef<LogChartRef, LogChartProps>(({
                 trackName={lithConfigModal.trackName}
                 currentValues={lithConfigModal.values}
                 currentConfig={lithologyConfigs[lithConfigModal.trackName] || {}}
+                currentRangeConfig={lithologyRangeConfigs[lithConfigModal.trackName]}
                 onClose={() => setLithConfigModal(prev => ({ ...prev, visible: false }))}
                 onSave={handleSaveLithologyMap}
             />

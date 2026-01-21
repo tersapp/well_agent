@@ -99,8 +99,9 @@ class LithologyAgent(BaseAgent):
         ## 分析规则
         1. 如果工具被标记为 ⭐推荐，**必须优先使用**该工具
         2. 如果用户问到"交会"、"Vsh"、"曲线形态"等关键词，使用对应工具
-        3. 如果不确定岩性，使用 analyze_crossplot 工具
-        4. 如果问题超出岩性分析范围（如流体、饱和度），ESCALATE
+        3. 如果不确定岩性，使用 analyze_crossplot 工具。
+        4. **如果用户提到"图版"、"骨架线"或进行中子-密度交会分析，请在 analyze_crossplot 中设置 parameter 'overlay_type': 'ND'**
+        5. 如果问题超出岩性分析范围（如流体、饱和度），ESCALATE
         
         ## 推荐工具检测结果
         {"**检测到推荐工具**: " + str(matched_tool_names) + " - 请使用这些工具!" if matched_tool_names else "未检测到特定工具匹配，根据问题自行判断"}
@@ -145,41 +146,20 @@ class LithologyAgent(BaseAgent):
             print(f"DEBUG: Params before patch: {params}")
             print(f"DEBUG: Curve Map: {curve_map}")
             
-            # --- PATCH: Auto-inject mapped curve aliases ---
-            # LLM might use standard names "RHOB", "GR" etc.
-            # We need to map them to actual aliases like "ZDEN..."
-            
-            # 1. Map for analyze_crossplot
-            if tool_name == "analyze_crossplot":
-                # Forcibly overwrite with mapped names if available
-                # This handles cases where LLM sends "RHOB(Alias)" string instead of just "RHOB"
-                if curve_map.get('RHOB'):
-                    params['rhob_curve'] = curve_map['RHOB']
-                if curve_map.get('NPHI'):
-                    params['nphi_curve'] = curve_map['NPHI']
-                if curve_map.get('DT'):
-                    params['dt_curve'] = curve_map['DT']
-            
-            # 2. Map for calculate_vsh
-            elif tool_name == "calculate_vsh":
-                if curve_map.get('GR'):
-                    params['gr_curve'] = curve_map['GR']
-            
-            # 3. Map for identify_curve_shape
-            elif tool_name == "identify_curve_shape":
-                # If LLM passed a standard type key that exists in map, use the map
-                # Otherwise keep what LLM sent (it might be a specific curve name)
-                c_cname = params.get('curve_name', 'GR')
-                if c_cname in curve_map and curve_map[c_cname]:
-                    params['curve_name'] = curve_map[c_cname]
-                elif curve_map.get('GR') and (c_cname == 'GR' or 'GR(' in c_cname):
-                     params['curve_name'] = curve_map['GR']
-            # -----------------------------------------------
+            # --- PATCH REMOVED: Auto-injection handled by tool internal logic ---
             
             print(f"DEBUG: Params after patch: {params}")
             
             # Execute tool using BaseAgent method
             tool_result = self.execute_tool(tool_name, log_data=data, **params)
+            
+            # --- OPTIMIZATION: Detach heavy visualization data from LLM context ---
+            visualization_data = None
+            if isinstance(tool_result, dict) and "visualization" in tool_result:
+                visualization_data = tool_result.pop("visualization")
+                # Leave a placeholder so LLM knows a chart was generated
+                tool_result["visualization_summary"] = "Chart generated successfully. Data hidden from prompt to save tokens."
+            
             tool_output = json.dumps(tool_result, indent=2, ensure_ascii=False)
                 
             # 5. Second Pass: Synthesis
@@ -199,6 +179,14 @@ class LithologyAgent(BaseAgent):
             try:
                 result = self.parse_json_response(response_text_2)
                 result['tool_used'] = tool_name
+                
+                # --- Restore visualization and attach to output ---
+                if visualization_data:
+                    tool_result["visualization"] = visualization_data
+                    # Append ECharts data block to reasoning for Frontend rendering
+                    viz_json = json.dumps(visualization_data, ensure_ascii=False)
+                    result['reasoning'] = result.get('reasoning', '') + f"\n\n```echarts\n{viz_json}\n```"
+                
                 result['tool_result'] = tool_result
                 return result
             except ValueError:

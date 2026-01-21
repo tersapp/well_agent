@@ -1,6 +1,14 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 
+// Range-based lithology definition
+export interface LithologyRangeDefinition {
+    minValue: number;
+    maxValue: number;
+    color: string;
+    label: string;
+}
+
 interface TrackColumnProps {
     name: string;
     depth: number[];
@@ -18,7 +26,8 @@ interface TrackColumnProps {
     maxDepth: number;
     width: number;
     viewDepth?: [number, number];
-    lithologyMap?: Record<number, { color: string, label: string }>; // New Prop
+    lithologyMap?: Record<number, { color: string, label: string }>;
+    lithologyRanges?: LithologyRangeDefinition[]; // NEW: Range-based config
     onViewDepthChange?: (start: number, end: number) => void;
     onContextMenu: (e: React.MouseEvent, trackName: string) => void;
     onDoubleClickScale: (trackName: string, currentMin: number, currentMax: number) => void;
@@ -40,6 +49,7 @@ const TrackColumn: React.FC<TrackColumnProps> = ({
     width,
     viewDepth,
     lithologyMap,
+    lithologyRanges, // NEW
     onViewDepthChange,
     onContextMenu,
     onDoubleClickScale,
@@ -68,7 +78,7 @@ const TrackColumn: React.FC<TrackColumnProps> = ({
 
     // Handle zoom events
     const onEvents = useMemo(() => ({
-        datazoom: (params: any) => {
+        datazoom: (_params: any) => {
             if (isProgrammaticUpdate.current) return;
             if (!onViewDepthChange || !chartRef.current) return;
 
@@ -96,7 +106,7 @@ const TrackColumn: React.FC<TrackColumnProps> = ({
     }), [onViewDepthChange, maxDepth, minDepth]);
 
     const option = useMemo(() => {
-        const isLithology = config.type === 'lithology' || name.includes('LITH');
+        const isLithology = config.type === 'lithology';
         const data = depth.map((d, i) => [values[i], d]);
 
         const gridConfig = {
@@ -143,10 +153,17 @@ const TrackColumn: React.FC<TrackColumnProps> = ({
                     textStyle: { color: '#e4e4e7' },
                     formatter: (params: any) => {
                         const val = params.data[3]; // [0, start, end, val]
-                        const def = lithologyMap?.[val];
-                        const label = def ? `${val} - ${def.label}` : `${val}`;
+                        // Try range lookup first
+                        let labelText = `${val}`;
+                        if (lithologyRanges && lithologyRanges.length > 0) {
+                            const range = lithologyRanges.find(r => val >= r.minValue && val < r.maxValue);
+                            if (range) labelText = `${val.toFixed(2)} - ${range.label}`;
+                        } else if (lithologyMap) {
+                            const def = lithologyMap[Math.round(val)];
+                            if (def) labelText = `${Math.round(val)} - ${def.label}`;
+                        }
                         const depthRange = `${params.data[1].toFixed(2)} - ${params.data[2].toFixed(2)} m`;
-                        return `${name}<br/>${label}<br/>${depthRange}`;
+                        return `${name}<br/>${labelText}<br/>${depthRange}`;
                     }
                 },
                 xAxis: { show: false, min: 0, max: 1 },
@@ -160,8 +177,14 @@ const TrackColumn: React.FC<TrackColumnProps> = ({
                         const height = Math.abs(yEnd - yStart);
                         const w = api.size([1, 0])[0];
                         const val = api.value(3);
-                        // Lookup color
-                        const color = lithologyMap?.[val]?.color || DEFAULT_LITH_COLOR;
+                        // Lookup color: prioritize range config
+                        let color = DEFAULT_LITH_COLOR;
+                        if (lithologyRanges && lithologyRanges.length > 0) {
+                            const range = lithologyRanges.find(r => val >= r.minValue && val < r.maxValue);
+                            if (range) color = range.color;
+                        } else if (lithologyMap) {
+                            color = lithologyMap[Math.round(val)]?.color || DEFAULT_LITH_COLOR;
+                        }
 
                         return {
                             type: 'rect',
@@ -197,7 +220,7 @@ const TrackColumn: React.FC<TrackColumnProps> = ({
                 areaStyle: config.fillColor ? { color: config.fillColor, origin: 'start' } : undefined,
             }],
         };
-    }, [name, depth, values, config, minDepth, maxDepth, lithologyMap]);
+    }, [name, depth, values, config, minDepth, maxDepth, lithologyMap, lithologyRanges]);
 
     const unitDisplay = config.unit ? `(${config.unit})` : '';
 
@@ -227,6 +250,7 @@ const TrackColumn: React.FC<TrackColumnProps> = ({
 
             <div style={{ flex: 1 }} onDoubleClick={() => onDoubleClickScale(name, config.min, config.max)}>
                 <ReactECharts
+                    key={config.type}
                     ref={chartRef}
                     option={option}
                     onEvents={onEvents}
